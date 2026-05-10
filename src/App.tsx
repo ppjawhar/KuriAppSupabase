@@ -347,6 +347,7 @@ function App() {
   const [claimsCount, setClaimsCount] = useState(0);
   const [showDeleteKuriDialog, setShowDeleteKuriDialog] = useState(false);
   const [deleteKuriLoading, setDeleteKuriLoading] = useState(false);
+  const [dataRefreshVersion, setDataRefreshVersion] = useState(0);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem(THEME_KEY) as ThemeMode | null;
@@ -447,7 +448,7 @@ function App() {
     };
 
     void loadKuries();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, dataRefreshVersion]);
 
   useEffect(() => {
     const loadRounds = async () => {
@@ -517,7 +518,7 @@ function App() {
     };
 
     void loadRounds();
-  }, [session?.user?.id, selectedKuriId]);
+  }, [session?.user?.id, selectedKuriId, dataRefreshVersion]);
 
   useEffect(() => {
     const loadAllRounds = async () => {
@@ -579,7 +580,7 @@ function App() {
     };
 
     void loadAllRounds();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, dataRefreshVersion]);
 
   useEffect(() => {
     const loadPayments = async () => {
@@ -627,7 +628,7 @@ function App() {
     };
 
     void loadPayments();
-  }, [session?.user?.id, selectedKuriId, rounds, historyRoundId]);
+  }, [session?.user?.id, selectedKuriId, rounds, historyRoundId, dataRefreshVersion]);
 
   useEffect(() => {
     const loadClaims = async () => {
@@ -675,7 +676,7 @@ function App() {
     };
 
     void loadClaims();
-  }, [session?.user?.id, selectedKuriId, rounds, historyRoundId]);
+  }, [session?.user?.id, selectedKuriId, rounds, historyRoundId, dataRefreshVersion]);
 
   useEffect(() => {
     const loadClaimsCount = async () => {
@@ -700,7 +701,7 @@ function App() {
     };
 
     void loadClaimsCount();
-  }, [session?.user?.id, selectedKuriId, rounds]);
+  }, [session?.user?.id, selectedKuriId, rounds, dataRefreshVersion]);
 
   const current = onboardingScreens[index];
 
@@ -994,6 +995,8 @@ function App() {
     setKuriView("detail");
     setShowAddKuri(false);
   };
+  const bumpDataRefresh = () =>
+    setDataRefreshVersion((current) => current + 1);
 
   const submitRound = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1103,6 +1106,7 @@ function App() {
     setRoundPaymentDate("");
     setRoundClaimedAmount("");
     setShowNewRoundDrawer(false);
+    bumpDataRefresh();
   };
 
   const submitKuri = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1161,6 +1165,7 @@ function App() {
     setShowAddKuri(false);
     setActiveTab("kuries");
     openKuriDetail(created.id);
+    bumpDataRefresh();
   };
 
   const submitPayment = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1295,6 +1300,7 @@ function App() {
     setPaymentNote("");
     setPaymentAttachment(null);
     setShowMarkPaymentDrawer(false);
+    bumpDataRefresh();
   };
 
   const submitClaim = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1407,6 +1413,7 @@ function App() {
     setClaimNote("");
     setClaimAttachment(null);
     setShowMarkClaimDrawer(false);
+    bumpDataRefresh();
   };
 
   const deleteSelectedKuri = async () => {
@@ -1441,6 +1448,7 @@ function App() {
     setSelectedKuriId(remainingKuries[0]?.id ?? "");
     setKuriView("list");
     setShowDeleteKuriDialog(false);
+    bumpDataRefresh();
   };
 
   const themeToggle = (
@@ -2954,7 +2962,7 @@ function App() {
           )}
 
           <Drawer open={showAddKuri} onOpenChange={setShowAddKuri}>
-            <DrawerContent className="border-border bg-card">
+            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   Add Kuri
@@ -2963,40 +2971,42 @@ function App() {
                   Create a new Kuri to track
                 </DrawerDescription>
               </DrawerHeader>
-              <form className="space-y-4 px-4 pb-4" onSubmit={submitKuri}>
-                {kuriDbError && (
-                  <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
-                    {kuriDbError}
-                  </div>
-                )}
-                <label className="block text-sm font-medium text-foreground">
-                  Kuri Name
-                  <input
-                    value={kuriName}
-                    onChange={(e) => setKuriName(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Enter Kuri Name"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Organizer
-                  <input
-                    value={kuriOrganizer}
-                    onChange={(e) => setKuriOrganizer(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Enter organizer name"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  C/o (Optional)
-                  <input
-                    value={kuriReference}
-                    onChange={(e) => setKuriReference(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Enter reference name"
-                  />
-                </label>
-                <div className="flex gap-2">
+              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitKuri}>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+                  {kuriDbError && (
+                    <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+                      {kuriDbError}
+                    </div>
+                  )}
+                  <label className="block text-sm font-medium text-foreground">
+                    Kuri Name
+                    <input
+                      value={kuriName}
+                      onChange={(e) => setKuriName(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Enter Kuri Name"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Organizer
+                    <input
+                      value={kuriOrganizer}
+                      onChange={(e) => setKuriOrganizer(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Enter organizer name"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    C/o (Optional)
+                    <input
+                      value={kuriReference}
+                      onChange={(e) => setKuriReference(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Enter reference name"
+                    />
+                  </label>
+                </div>
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
@@ -3124,7 +3134,7 @@ function App() {
                     />
                   </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
@@ -3145,7 +3155,7 @@ function App() {
             open={showMarkPaymentDrawer}
             onOpenChange={setShowMarkPaymentDrawer}
           >
-            <DrawerContent className="border-border bg-card">
+            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   Mark a Payment
@@ -3154,12 +3164,13 @@ function App() {
                   Record payment for this round
                 </DrawerDescription>
               </DrawerHeader>
-              <form className="space-y-4 px-4 pb-4" onSubmit={submitPayment}>
-                {paymentDbError && (
-                  <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
-                    {paymentDbError}
-                  </div>
-                )}
+              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitPayment}>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+                  {paymentDbError && (
+                    <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+                      {paymentDbError}
+                    </div>
+                  )}
                 <label className="block text-sm font-medium text-foreground">
                   Installment
                   <input
@@ -3225,7 +3236,8 @@ function App() {
                     placeholder="Additional notes"
                   />
                 </label>
-                <div className="flex gap-2">
+                </div>
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
@@ -3250,7 +3262,7 @@ function App() {
             open={showMarkClaimDrawer}
             onOpenChange={setShowMarkClaimDrawer}
           >
-            <DrawerContent className="border-border bg-card">
+            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   Mark a Claim
@@ -3259,12 +3271,13 @@ function App() {
                   Record claim received for this round
                 </DrawerDescription>
               </DrawerHeader>
-              <form className="space-y-4 px-4 pb-4" onSubmit={submitClaim}>
-                {claimDbError && (
-                  <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
-                    {claimDbError}
-                  </div>
-                )}
+              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitClaim}>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+                  {claimDbError && (
+                    <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+                      {claimDbError}
+                    </div>
+                  )}
                 <label className="block text-sm font-medium text-foreground">
                   Amount
                   <input
@@ -3330,7 +3343,8 @@ function App() {
                     placeholder="Additional notes"
                   />
                 </label>
-                <div className="flex gap-2">
+                </div>
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
