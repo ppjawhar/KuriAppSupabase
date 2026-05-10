@@ -8,7 +8,7 @@
 :root {
   --background: #ffffff;
   --foreground: #1e1b4b;
-  --card: #ffffff;
+  --card: #f8fafc;
   --card-foreground: #020617;
   --popover: #ffffff;
   --popover-foreground: #020617;
@@ -141,4 +141,46 @@ body {
   html {
     @apply font-sans;
   }
+
+  input[type="date"],
+  input[type="month"] {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    display: block;
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-min-logical-width: calc(100% - 1rem);
+  }
+}
+
+@keyframes page-slide-in-forward {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes page-slide-in-backward {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.page-enter-forward {
+  animation: page-slide-in-forward 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.page-enter-backward {
+  animation: page-slide-in-backward 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }

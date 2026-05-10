@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   BadgeIndianRupee,
   ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Clock3,
   House,
   LayoutDashboard,
   Layers3,
+  MoreVertical,
   Moon,
+  Pencil,
+  PackageOpen,
   Plus,
   RefreshCw,
   Trash2,
@@ -60,7 +64,7 @@ type AppStage = "splash" | "onboarding" | "auth" | "home";
 type ThemeMode = "light" | "dark";
 type KuriFilter = "All" | "Claimed" | "Unclaimed" | "Active" | "Completed";
 type AppTab = "home" | "kuries" | "account";
-type AccountView = "menu" | "profile" | "appearance";
+type AccountView = "menu" | "profile" | "appearance" | "about";
 type KuriView =
   | "list"
   | "detail"
@@ -293,6 +297,11 @@ function App() {
   const [activeTab, setActiveTab] = useState<AppTab>("home");
   const [accountView, setAccountView] = useState<AccountView>("menu");
   const [showChangePasswordForm, setShowChangePasswordForm] = useState(false);
+  const [showChangeNameForm, setShowChangeNameForm] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [changeNameLoading, setChangeNameLoading] = useState(false);
+  const [changeNameError, setChangeNameError] = useState("");
+  const [changeNameMessage, setChangeNameMessage] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
@@ -301,6 +310,8 @@ function App() {
   const [kuriView, setKuriView] = useState<KuriView>("list");
   const [kuriFilter, setKuriFilter] = useState<KuriFilter>("All");
   const [showAddKuri, setShowAddKuri] = useState(false);
+  const [isEditingKuri, setIsEditingKuri] = useState(false);
+  const [showKuriActions, setShowKuriActions] = useState(false);
   const [kuries, setKuries] = useState<KuriItem[]>([]);
   const [selectedKuriId, setSelectedKuriId] = useState<string>("");
   const [kuriLoading, setKuriLoading] = useState(false);
@@ -310,6 +321,10 @@ function App() {
   const [rounds, setRounds] = useState<KuriRound[]>([]);
   const [allRounds, setAllRounds] = useState<KuriRound[]>([]);
   const [showNewRoundDrawer, setShowNewRoundDrawer] = useState(false);
+  const [isEditingRound, setIsEditingRound] = useState(false);
+  const [editingRoundId, setEditingRoundId] = useState("");
+  const [showRoundActions, setShowRoundActions] = useState(false);
+  const [showDeleteRoundDialog, setShowDeleteRoundDialog] = useState(false);
   const [kuriName, setKuriName] = useState("");
   const [kuriOrganizer, setKuriOrganizer] = useState("");
   const [kuriReference, setKuriReference] = useState("");
@@ -322,7 +337,6 @@ function App() {
   const [roundDuration, setRoundDuration] = useState("");
   const [roundClaims, setRoundClaims] = useState("");
   const [roundPaymentDate, setRoundPaymentDate] = useState("");
-  const [roundClaimedAmount, setRoundClaimedAmount] = useState("");
   const [payments, setPayments] = useState<KuriPaymentItem[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsError, setPaymentsError] = useState("");
@@ -348,6 +362,9 @@ function App() {
   const [showDeleteKuriDialog, setShowDeleteKuriDialog] = useState(false);
   const [deleteKuriLoading, setDeleteKuriLoading] = useState(false);
   const [dataRefreshVersion, setDataRefreshVersion] = useState(0);
+  const [pageTransitionClass, setPageTransitionClass] = useState("");
+  const prevKuriViewRef = useRef<KuriView>("list");
+  const prevAccountViewRef = useRef<AccountView>("menu");
 
   useEffect(() => {
     const storedTheme = localStorage.getItem(THEME_KEY) as ThemeMode | null;
@@ -703,6 +720,52 @@ function App() {
     void loadClaimsCount();
   }, [session?.user?.id, selectedKuriId, rounds, dataRefreshVersion]);
 
+  useEffect(() => {
+    if (activeTab !== "kuries") {
+      prevKuriViewRef.current = kuriView;
+      return;
+    }
+
+    const kuriViewOrder: Record<KuriView, number> = {
+      list: 0,
+      detail: 1,
+      "completed-rounds": 2,
+      "payment-history": 2,
+      "claim-history": 2,
+    };
+    const prev = prevKuriViewRef.current;
+    if (prev === kuriView) return;
+    const isForward = kuriViewOrder[kuriView] >= kuriViewOrder[prev];
+    setPageTransitionClass(
+      isForward ? "page-enter-forward" : "page-enter-backward",
+    );
+    const timer = window.setTimeout(() => setPageTransitionClass(""), 260);
+    prevKuriViewRef.current = kuriView;
+    return () => window.clearTimeout(timer);
+  }, [activeTab, kuriView]);
+
+  useEffect(() => {
+    if (activeTab !== "account") {
+      prevAccountViewRef.current = accountView;
+      return;
+    }
+
+    const accountViewOrder: Record<AccountView, number> = {
+      menu: 0,
+      profile: 1,
+      appearance: 1,
+    };
+    const prev = prevAccountViewRef.current;
+    if (prev === accountView) return;
+    const isForward = accountViewOrder[accountView] >= accountViewOrder[prev];
+    setPageTransitionClass(
+      isForward ? "page-enter-forward" : "page-enter-backward",
+    );
+    const timer = window.setTimeout(() => setPageTransitionClass(""), 260);
+    prevAccountViewRef.current = accountView;
+    return () => window.clearTimeout(timer);
+  }, [activeTab, accountView]);
+
   const current = onboardingScreens[index];
 
   const completeOnboarding = () => {
@@ -812,6 +875,36 @@ function App() {
     setShowChangePasswordForm(false);
   };
 
+  const handleChangeName = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setChangeNameError("");
+    setChangeNameMessage("");
+
+    const trimmedName = newDisplayName.trim();
+    if (!trimmedName) {
+      setChangeNameError("Name cannot be empty.");
+      return;
+    }
+
+    setChangeNameLoading(true);
+    const { data, error } = await supabase.auth.updateUser({
+      data: { full_name: trimmedName },
+    });
+    setChangeNameLoading(false);
+
+    if (error) {
+      setChangeNameError(error.message);
+      return;
+    }
+
+    if (data.user) {
+      setSession((prev) => (prev ? { ...prev, user: data.user } : prev));
+    }
+    setChangeNameMessage("Name updated successfully.");
+    setShowChangeNameForm(false);
+    setNewDisplayName("");
+  };
+
   const listItems: KuriListViewItem[] = kuries.map((kuri) => {
     const kuriRounds = allRounds.filter((round) => round.kuriId === kuri.id);
     const active = kuriRounds.find((round) => round.status === "Active");
@@ -894,6 +987,7 @@ function App() {
     activeTab === "home" ||
     activeTab === "account" ||
     (activeTab === "kuries" && kuriView === "list");
+  const activeTabIndex = activeTab === "home" ? 0 : activeTab === "kuries" ? 1 : 2;
 
   const formatInr = (value: number) => `INR ${value.toLocaleString("en-IN")}`;
   const formatMoney = (currency: "INR" | "SGD" | "DHR", value: number) => {
@@ -926,24 +1020,42 @@ function App() {
   const claimPillWidthClass = (
     status: "Claimed" | "Partially Claimed" | "Unclaimed",
   ) => {
-    if (status === "Partially Claimed") return "w-[134px]";
-    if (status === "Claimed") return "w-[100px]";
-    return "w-[87px]";
+    return "w-fit";
   };
   const claimPillToneClass = (
     status: "Claimed" | "Partially Claimed" | "Unclaimed",
   ) => {
     if (status === "Claimed") return "bg-emerald-100 text-emerald-700";
     if (status === "Partially Claimed") return "bg-amber-100 text-amber-700";
-    return "bg-rose-100 text-rose-700";
+    return "bg-[#DBEAFE] text-[#60A5FA]";
   };
   const claimPillIconClass = (
     status: "Claimed" | "Partially Claimed" | "Unclaimed",
   ) => {
     if (status === "Claimed") return "text-emerald-600";
     if (status === "Partially Claimed") return "text-amber-600";
-    return "text-rose-600";
+    return "text-[#60A5FA]";
   };
+  const ClaimPillIcon = ({
+    status,
+    className,
+  }: {
+    status: "Claimed" | "Partially Claimed" | "Unclaimed";
+    className?: string;
+  }) =>
+    status === "Unclaimed" ? (
+      <WalletCards className={className} />
+    ) : (
+      <BadgeIndianRupee className={className} />
+    );
+  const EmptyState = ({ message }: { message: string }) => (
+    <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
+      <div className="mx-auto mb-3 grid size-12 place-items-center rounded-full bg-muted/50">
+        <PackageOpen className="size-6 text-muted-foreground" />
+      </div>
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
 
   const addMonths = (monthValue: string, monthsToAdd: number) => {
     const [year, month] = monthValue.split("-").map(Number);
@@ -995,8 +1107,51 @@ function App() {
     setKuriView("detail");
     setShowAddKuri(false);
   };
+  const resetKuriForm = () => {
+    setKuriName("");
+    setKuriOrganizer("");
+    setKuriReference("");
+    setIsEditingKuri(false);
+    setKuriDbError("");
+  };
+  const startEditKuri = () => {
+    if (!selectedKuri) return;
+    setKuriName(selectedKuri.name);
+    setKuriOrganizer(selectedKuri.organizer);
+    setKuriReference(selectedKuri.referenceName ?? "");
+    setIsEditingKuri(true);
+    setKuriDbError("");
+    setShowKuriActions(false);
+    setShowAddKuri(true);
+  };
   const bumpDataRefresh = () =>
     setDataRefreshVersion((current) => current + 1);
+  const resetRoundForm = () => {
+    setRoundName("");
+    setRoundStartMonth("");
+    setRoundCurrency("INR");
+    setRoundMonthlyAmount("");
+    setRoundDuration("");
+    setRoundClaims("");
+    setRoundPaymentDate("");
+    setIsEditingRound(false);
+    setEditingRoundId("");
+    setRoundDbError("");
+  };
+  const startEditRound = (round: KuriRound) => {
+    setRoundName(round.roundName);
+    setRoundStartMonth(round.startMonth);
+    setRoundCurrency(round.currency);
+    setRoundMonthlyAmount(String(round.monthlyAmount));
+    setRoundDuration(String(round.duration));
+    setRoundClaims(String(round.numberOfClaims));
+    setRoundPaymentDate(String(round.paymentDate));
+    setIsEditingRound(true);
+    setEditingRoundId(round.id);
+    setRoundDbError("");
+    setShowRoundActions(false);
+    setShowNewRoundDrawer(true);
+  };
 
   const submitRound = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1006,7 +1161,8 @@ function App() {
     const duration = Number(roundDuration);
     const claims = Number(roundClaims);
     const paymentDate = Number(roundPaymentDate);
-    const claimed = Number(roundClaimedAmount || 0);
+    const editingRound = rounds.find((round) => round.id === editingRoundId);
+    const claimed = editingRound?.claimedAmount ?? 0;
 
     if (
       !roundName.trim() ||
@@ -1029,7 +1185,7 @@ function App() {
     const pendingClaimAmount = Math.max(totalValue - claimed, 0);
     const endMonth = addMonths(roundStartMonth, Math.max(duration - 1, 0));
     const paymentSchedule = buildPaymentSchedule(roundStartMonth, duration);
-    const progress = 0;
+    const progress = editingRound?.progress ?? 0;
     const status = computeRoundStatus(
       roundStartMonth,
       progress,
@@ -1040,32 +1196,43 @@ function App() {
     const claimStatus = computeClaimStatus(claimed, totalValue);
 
     setRoundDbError("");
-    const { data, error } = await supabase
-      .from("kuri_rounds")
-      .insert({
-        user_id: session.user.id,
-        kuri_id: selectedKuri.id,
-        round_name: roundName.trim(),
-        status,
-        claim_status: claimStatus,
-        currency: roundCurrency,
-        monthly_amount: monthly,
-        number_of_claims: claims,
-        claimed_amount: claimed,
-        total_value: totalValue,
-        claim_amount_per_claim: claimAmountPerClaim,
-        start_month: roundStartMonth,
-        end_month: endMonth,
-        payment_date: paymentDate,
-        payment_schedule: paymentSchedule,
-        pending_claim_amount: pendingClaimAmount,
-        progress,
-        duration,
-      })
-      .select(
-        "id,kuri_id,round_name,status,claim_status,currency,monthly_amount,number_of_claims,claimed_amount,total_value,claim_amount_per_claim,start_month,end_month,payment_date,payment_schedule,pending_claim_amount,progress,duration,created_at",
-      )
-      .single();
+    const roundPayload = {
+      user_id: session.user.id,
+      kuri_id: selectedKuri.id,
+      round_name: roundName.trim(),
+      status,
+      claim_status: claimStatus,
+      currency: roundCurrency,
+      monthly_amount: monthly,
+      number_of_claims: claims,
+      claimed_amount: claimed,
+      total_value: totalValue,
+      claim_amount_per_claim: claimAmountPerClaim,
+      start_month: roundStartMonth,
+      end_month: endMonth,
+      payment_date: paymentDate,
+      payment_schedule: paymentSchedule,
+      pending_claim_amount: pendingClaimAmount,
+      progress,
+      duration,
+    };
+    const { data, error } =
+      isEditingRound && editingRoundId
+        ? await supabase
+            .from("kuri_rounds")
+            .update(roundPayload)
+            .eq("id", editingRoundId)
+            .select(
+              "id,kuri_id,round_name,status,claim_status,currency,monthly_amount,number_of_claims,claimed_amount,total_value,claim_amount_per_claim,start_month,end_month,payment_date,payment_schedule,pending_claim_amount,progress,duration,created_at",
+            )
+            .single()
+        : await supabase
+            .from("kuri_rounds")
+            .insert(roundPayload)
+            .select(
+              "id,kuri_id,round_name,status,claim_status,currency,monthly_amount,number_of_claims,claimed_amount,total_value,claim_amount_per_claim,start_month,end_month,payment_date,payment_schedule,pending_claim_amount,progress,duration,created_at",
+            )
+            .single();
 
     if (error || !data) {
       setRoundDbError(error?.message ?? "Failed to create round.");
@@ -1096,16 +1263,32 @@ function App() {
       duration: data.duration ?? 12,
     };
 
-    setRounds((prev) => [created, ...prev]);
-    setRoundName("");
-    setRoundStartMonth("");
-    setRoundCurrency("INR");
-    setRoundMonthlyAmount("");
-    setRoundDuration("");
-    setRoundClaims("");
-    setRoundPaymentDate("");
-    setRoundClaimedAmount("");
+    setRounds((prev) =>
+      isEditingRound
+        ? prev.map((round) => (round.id === created.id ? created : round))
+        : [created, ...prev],
+    );
+    resetRoundForm();
     setShowNewRoundDrawer(false);
+    bumpDataRefresh();
+  };
+
+  const deleteRound = async () => {
+    if (!editingRoundId) return;
+    setRoundDbError("");
+    const { error } = await supabase
+      .from("kuri_rounds")
+      .delete()
+      .eq("id", editingRoundId);
+    if (error) {
+      setRoundDbError(error.message);
+      return;
+    }
+    setRounds((prev) => prev.filter((round) => round.id !== editingRoundId));
+    setShowDeleteRoundDialog(false);
+    setShowRoundActions(false);
+    setEditingRoundId("");
+    setIsEditingRound(false);
     bumpDataRefresh();
   };
 
@@ -1118,24 +1301,38 @@ function App() {
     if (!trimmedName || !trimmedOrganizer) return;
 
     setKuriDbError("");
-    const { data, error } = await supabase
-      .from("kuries")
-      .insert({
-        user_id: session.user.id,
-        name: trimmedName,
-        organizer: trimmedOrganizer,
-        reference_name: kuriReference.trim() || null,
-        status: "Active",
-        claim_status: "Unclaimed",
-        progress: 0,
-        duration: 12,
-        kuri_amount: 100000,
-        monthly_amount: 10000,
-      })
-      .select(
-        "id,name,status,claim_status,progress,duration,kuri_amount,monthly_amount,organizer,reference_name,created_at",
-      )
-      .single();
+    const { data, error } =
+      isEditingKuri && selectedKuri
+        ? await supabase
+            .from("kuries")
+            .update({
+              name: trimmedName,
+              organizer: trimmedOrganizer,
+              reference_name: kuriReference.trim() || null,
+            })
+            .eq("id", selectedKuri.id)
+            .select(
+              "id,name,status,claim_status,progress,duration,kuri_amount,monthly_amount,organizer,reference_name,created_at",
+            )
+            .single()
+        : await supabase
+            .from("kuries")
+            .insert({
+              user_id: session.user.id,
+              name: trimmedName,
+              organizer: trimmedOrganizer,
+              reference_name: kuriReference.trim() || null,
+              status: "Active",
+              claim_status: "Unclaimed",
+              progress: 0,
+              duration: 12,
+              kuri_amount: 100000,
+              monthly_amount: 10000,
+            })
+            .select(
+              "id,name,status,claim_status,progress,duration,kuri_amount,monthly_amount,organizer,reference_name,created_at",
+            )
+            .single();
 
     if (error || !data) {
       setKuriDbError(error?.message ?? "Failed to create kuri.");
@@ -1158,13 +1355,15 @@ function App() {
       referenceName: data.reference_name ?? undefined,
     };
 
-    setKuries((prev) => [created, ...prev]);
-    setKuriName("");
-    setKuriOrganizer("");
-    setKuriReference("");
+    setKuries((prev) =>
+      isEditingKuri
+        ? prev.map((kuri) => (kuri.id === created.id ? created : kuri))
+        : [created, ...prev],
+    );
+    resetKuriForm();
     setShowAddKuri(false);
     setActiveTab("kuries");
-    openKuriDetail(created.id);
+    if (!isEditingKuri) openKuriDetail(created.id);
     bumpDataRefresh();
   };
 
@@ -1575,7 +1774,7 @@ function App() {
       )}
 
       {stage === "auth" && (
-        <section className="flex min-h-svh flex-1 flex-col px-6 pb-8 pt-20">
+        <section className="relative flex h-svh min-h-svh flex-1 flex-col overflow-y-auto px-6 pt-20 pb-28">
           <div className="mb-6 flex justify-end">{themeToggle}</div>
           {authView === "signin" ? (
             <div className="space-y-12">
@@ -1588,8 +1787,13 @@ function App() {
                 </p>
               </div>
 
-              <form className="space-y-3" onSubmit={handleSignIn}>
-                <label className="block text-sm leading-5 font-medium text-foreground">
+              <form
+                id="signin-form"
+                className="flex min-h-0 flex-col"
+                onSubmit={handleSignIn}
+              >
+                <div className="space-y-3 pb-4">
+                  <label className="block text-sm leading-5 font-medium text-foreground">
                   Email Address
                   <input
                     type="email"
@@ -1599,9 +1803,9 @@ function App() {
                     className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                     placeholder="Enter your email address"
                   />
-                </label>
+                  </label>
 
-                <label className="block text-sm leading-5 font-medium text-foreground">
+                  <label className="block text-sm leading-5 font-medium text-foreground">
                   Password
                   <input
                     type="password"
@@ -1611,55 +1815,47 @@ function App() {
                     className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                     placeholder="Enter your password"
                   />
-                </label>
+                  </label>
 
-                <button
-                  type="button"
-                  className="pt-1 text-sm leading-6 font-medium text-primary"
-                >
-                  Forgot your password?
-                </button>
-
-                <div className="rounded-xl border border-border bg-background p-4">
-                  <div className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 size-4 text-chart-3" />
-                    <div>
-                      <p className="text-sm leading-[14px] text-foreground">
-                        Private tracking only
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        KuriApp helps you record payments, lots and claims. It
-                        never collects or transfers money.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 pt-2 text-sm leading-6">
-                  <span className="text-foreground">
-                    Don’t have an account?
-                  </span>
                   <button
                     type="button"
-                    className="font-medium text-primary"
-                    onClick={() => {
-                      setAuthError("");
-                      setAuthMessage("");
-                      setAuthView("signup");
-                    }}
+                    className="pt-1 text-sm leading-6 font-medium text-primary"
                   >
-                    Sign up
+                    Forgot your password?
                   </button>
-                </div>
 
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={authLoading}
-                  className="mt-56 h-10 w-full rounded-md text-sm leading-6 font-medium"
-                >
-                  {authLoading ? "Signing In..." : "Sign In"}
-                </Button>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck className="mt-0.5 size-4 text-chart-3" />
+                      <div>
+                        <p className="text-sm leading-[14px] text-foreground">
+                          Private tracking only
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                          KuriApp helps you record payments, lots and claims. It
+                          never collects or transfers money.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2 text-sm leading-6">
+                    <span className="text-foreground">
+                      Don’t have an account?
+                    </span>
+                    <button
+                      type="button"
+                      className="font-medium text-primary"
+                      onClick={() => {
+                        setAuthError("");
+                        setAuthMessage("");
+                        setAuthView("signup");
+                      }}
+                    >
+                      Sign up
+                    </button>
+                  </div>
+                </div>
               </form>
             </div>
           ) : (
@@ -1673,8 +1869,13 @@ function App() {
                 </p>
               </div>
 
-              <form className="space-y-3" onSubmit={handleSignUp}>
-                <label className="block text-sm leading-5 font-medium text-foreground">
+              <form
+                id="signup-form"
+                className="flex min-h-0 flex-col"
+                onSubmit={handleSignUp}
+              >
+                <div className="space-y-3 pb-4">
+                  <label className="block text-sm leading-5 font-medium text-foreground">
                   Full Name
                   <input
                     type="text"
@@ -1684,13 +1885,13 @@ function App() {
                     className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                     placeholder="Enter your full name"
                   />
-                </label>
+                  </label>
 
-                <p className="text-sm leading-5 text-muted-foreground">
-                  You can change this later from Account settings.
-                </p>
+                  <p className="text-sm leading-5 text-muted-foreground">
+                    You can change this later from Account settings.
+                  </p>
 
-                <label className="block text-sm leading-5 font-medium text-foreground">
+                  <label className="block text-sm leading-5 font-medium text-foreground">
                   Email Address
                   <input
                     type="email"
@@ -1700,9 +1901,9 @@ function App() {
                     className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                     placeholder="Enter your email address"
                   />
-                </label>
+                  </label>
 
-                <label className="block text-sm leading-5 font-medium text-foreground">
+                  <label className="block text-sm leading-5 font-medium text-foreground">
                   Password
                   <input
                     type="password"
@@ -1712,9 +1913,9 @@ function App() {
                     className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                     placeholder="Enter a password"
                   />
-                </label>
+                  </label>
 
-                <label className="block text-sm leading-5 font-medium text-foreground">
+                  <label className="block text-sm leading-5 font-medium text-foreground">
                   Confirm Password
                   <input
                     type="password"
@@ -1724,48 +1925,25 @@ function App() {
                     className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                     placeholder="Enter your password again"
                   />
-                </label>
+                  </label>
 
-                <div className="rounded-xl border border-border bg-background p-4">
-                  <div className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 size-4 text-chart-3" />
-                    <div>
-                      <p className="text-sm leading-[14px] text-foreground">
-                        Private tracking only
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        KuriApp helps you record payments, lots and claims. It
-                        never collects or transfers money.
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-3 pt-2 text-sm leading-6">
+                    <span className="text-foreground">
+                      Already have an account?
+                    </span>
+                    <button
+                      type="button"
+                      className="font-medium text-primary"
+                      onClick={() => {
+                        setAuthError("");
+                        setAuthMessage("");
+                        setAuthView("signin");
+                      }}
+                    >
+                      Sign In
+                    </button>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-3 pt-2 text-sm leading-6">
-                  <span className="text-foreground">
-                    Already have an account?
-                  </span>
-                  <button
-                    type="button"
-                    className="font-medium text-primary"
-                    onClick={() => {
-                      setAuthError("");
-                      setAuthMessage("");
-                      setAuthView("signin");
-                    }}
-                  >
-                    Sign In
-                  </button>
-                </div>
-
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={authLoading}
-                  className="mt-8 h-10 w-full rounded-md text-sm leading-6 font-medium"
-                >
-                  {authLoading ? "Creating Account..." : "Sign Up"}
-                </Button>
               </form>
             </div>
           )}
@@ -1782,6 +1960,24 @@ function App() {
               {authError || authMessage}
             </div>
           )}
+
+          <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[500px] border-t border-border bg-background/95 px-6 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <Button
+              type="submit"
+              form={authView === "signin" ? "signin-form" : "signup-form"}
+              size="lg"
+              disabled={authLoading}
+              className="h-10 w-full rounded-md text-sm leading-6 font-medium"
+            >
+              {authView === "signin"
+                ? authLoading
+                  ? "Signing In..."
+                  : "Sign In"
+                : authLoading
+                  ? "Creating Account..."
+                  : "Sign Up"}
+            </Button>
+          </div>
         </section>
       )}
 
@@ -1791,12 +1987,13 @@ function App() {
             className={cn(
               "flex-1 px-6 pt-8",
               showBottomMenu ? "pb-28" : "pb-6",
+              pageTransitionClass,
             )}
           >
             {activeTab === "home" && (
               <>
-                <div className="sticky top-0 z-20 mb-6 bg-background pb-4">
-                  <div>
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                  <div className="mt-2">
                     <p className="text-2xl leading-8 tracking-[-0.6px] text-foreground">
                       Hi, welcome back
                     </p>
@@ -1805,7 +2002,7 @@ function App() {
                     </h2>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="mt-28 grid grid-cols-2 gap-3">
                   <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
                     <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#DCFCE7] px-2.5 text-[12px] leading-[130%] font-medium text-[#22C55E]">
                       <RefreshCw className="size-3.5" />
@@ -1848,7 +2045,7 @@ function App() {
 
             {activeTab === "kuries" && kuriView === "list" && (
               <>
-                <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                       Kuries
@@ -1888,7 +2085,7 @@ function App() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="mt-32 space-y-3">
                   {kuriDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {kuriDbError}
@@ -1900,9 +2097,7 @@ function App() {
                     </div>
                   )}
                   {!kuriLoading && filteredKuries.length === 0 && (
-                    <div className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-                      No kuries yet. Tap + to create your first kuri.
-                    </div>
+                    <EmptyState message="No kuries yet. Tap + to create your first kuri." />
                   )}
                   {filteredKuries.map((kuri) => (
                     <article
@@ -1940,9 +2135,10 @@ function App() {
                             claimPillToneClass(kuri.cardClaimStatus),
                           )}
                         >
-                          <BadgeIndianRupee
+                          <ClaimPillIcon
+                            status={kuri.cardClaimStatus}
                             className={cn(
-                              "size-4",
+                              "size-4 shrink-0",
                               claimPillIconClass(kuri.cardClaimStatus),
                             )}
                           />
@@ -2011,19 +2207,57 @@ function App() {
               kuriView === "detail" &&
               selectedKuri && (
                 <>
-                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
-                    <button
-                      type="button"
-                      className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
-                      onClick={() => setKuriView("list")}
-                    >
-                      <ChevronLeft className="size-4" />
-                    </button>
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                    <div className="mb-4 flex items-center justify-between">
+                      <button
+                        type="button"
+                        className="grid size-10 place-items-center rounded-full border border-border bg-background"
+                        onClick={() => {
+                          setShowKuriActions(false);
+                          setKuriView("list");
+                        }}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </button>
+                      <div className="relative">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="size-10 rounded-full"
+                          onClick={() => setShowKuriActions((prev) => !prev)}
+                        >
+                          <MoreVertical className="size-4" />
+                        </Button>
+                        {showKuriActions && (
+                          <div className="absolute top-11 right-0 z-30 min-w-[180px] rounded-md border border-border bg-card p-1 shadow-sm">
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                              onClick={startEditKuri}
+                            >
+                              <Pencil className="size-4" />
+                              Edit Kuri Details
+                            </button>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                setShowKuriActions(false);
+                                setShowDeleteKuriDialog(true);
+                              }}
+                            >
+                              <Trash2 className="size-4" />
+                              Delete Kuri
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                       {selectedKuri.name}
                     </h2>
                   </div>
-                  <div className="mb-5 rounded-xl border border-border bg-card p-4">
+                  <div className="mt-28 mb-5 rounded-xl border border-border bg-card p-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-muted-foreground">
@@ -2059,7 +2293,7 @@ function App() {
 
                   {activeRound && (
                     <div className="rounded-xl border border-border bg-card p-4">
-                      <div className="mb-4">
+                      <div className="mb-4 flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm text-muted-foreground">
                             Round Name
@@ -2067,6 +2301,62 @@ function App() {
                           <p className="text-base font-semibold text-foreground">
                             {activeRound.roundName}
                           </p>
+                        </div>
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="size-8 rounded-md"
+                            onClick={() => setShowRoundActions((prev) => !prev)}
+                          >
+                            <MoreVertical className="size-4" />
+                          </Button>
+                          {showRoundActions && (
+                            <div className="absolute top-9 right-0 z-30 min-w-[180px] rounded-md border border-border bg-card p-1 shadow-sm">
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                                onClick={() => {
+                                  setShowRoundActions(false);
+                                  setHistoryRoundId(activeRound.id);
+                                  setKuriView("payment-history");
+                                }}
+                              >
+                                Payment History
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                                onClick={() => {
+                                  setShowRoundActions(false);
+                                  setHistoryRoundId(activeRound.id);
+                                  setKuriView("claim-history");
+                                }}
+                              >
+                                Claim Details
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                                onClick={() => startEditRound(activeRound)}
+                              >
+                                <Pencil className="size-4" />
+                                Edit Round
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                  setEditingRoundId(activeRound.id);
+                                  setShowRoundActions(false);
+                                  setShowDeleteRoundDialog(true);
+                                }}
+                              >
+                                <Trash2 className="size-4" />
+                                Delete Round
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -2088,9 +2378,10 @@ function App() {
                             claimPillToneClass(activeRound.claimStatus),
                           )}
                         >
-                          <BadgeIndianRupee
+                          <ClaimPillIcon
+                            status={activeRound.claimStatus}
                             className={cn(
-                              "size-4",
+                              "size-4 shrink-0",
                               claimPillIconClass(activeRound.claimStatus),
                             )}
                           />
@@ -2231,30 +2522,12 @@ function App() {
                         >
                           Mark a Claim
                         </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-9 w-full rounded-md text-sm"
-                          onClick={() => setKuriView("payment-history")}
-                        >
-                          Payment History
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-9 w-full rounded-md text-sm"
-                          onClick={() => setKuriView("claim-history")}
-                        >
-                          Claim Details
-                        </Button>
                       </div>
                     </div>
                   )}
 
                   {!activeRound && (
-                    <div className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-                      No active rounds.
-                    </div>
+                    <EmptyState message="No active rounds." />
                   )}
 
                   <Button
@@ -2270,62 +2543,86 @@ function App() {
                     <Button
                       size="lg"
                       className="mt-5 h-10 w-full rounded-md text-base"
-                      onClick={() => setShowNewRoundDrawer(true)}
+                      onClick={() => {
+                        resetRoundForm();
+                        setShowNewRoundDrawer(true);
+                      }}
                     >
                       New Round
                     </Button>
                   )}
 
-                  <div className="mt-5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 w-full border-destructive/30 text-destructive hover:bg-destructive/10"
-                      onClick={() => setShowDeleteKuriDialog(true)}
-                    >
-                      <Trash2 className="size-4" />
-                      Delete Kuri
-                    </Button>
-                    <AlertDialog
-                      open={showDeleteKuriDialog}
-                      onOpenChange={setShowDeleteKuriDialog}
-                    >
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete this Kuri?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This action cannot be undone.
-                            {selectedKuriHasActiveRound
-                              ? " You cannot delete this Kuri while an active round exists."
-                              : " This will permanently remove this Kuri."}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-10 flex-1"
-                            >
-                              Cancel
-                            </Button>
-                          </AlertDialogCancel>
-                          <AlertDialogAction>
-                            <Button
-                              type="button"
-                              className="h-10 flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              disabled={
-                                selectedKuriHasActiveRound || deleteKuriLoading
-                              }
-                              onClick={deleteSelectedKuri}
-                            >
-                              {deleteKuriLoading ? "Deleting..." : "Delete"}
-                            </Button>
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
+                  <AlertDialog
+                    open={showDeleteKuriDialog}
+                    onOpenChange={setShowDeleteKuriDialog}
+                  >
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this Kuri?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone.
+                          {selectedKuriHasActiveRound
+                            ? " You cannot delete this Kuri while an active round exists."
+                            : " This will permanently remove this Kuri."}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-10 flex-1"
+                          >
+                            Cancel
+                          </Button>
+                        </AlertDialogCancel>
+                        <AlertDialogAction>
+                          <Button
+                            type="button"
+                            className="h-10 flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={
+                              selectedKuriHasActiveRound || deleteKuriLoading
+                            }
+                            onClick={deleteSelectedKuri}
+                          >
+                            {deleteKuriLoading ? "Deleting..." : "Delete"}
+                          </Button>
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+
+                  <div className="h-6" />
+
+                  <AlertDialog
+                    open={showDeleteRoundDialog}
+                    onOpenChange={setShowDeleteRoundDialog}
+                  >
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this round?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will remove the round details. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>
+                          <Button type="button" variant="outline" className="h-10 flex-1">
+                            Cancel
+                          </Button>
+                        </AlertDialogCancel>
+                        <AlertDialogAction>
+                          <Button
+                            type="button"
+                            className="h-10 flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={deleteRound}
+                          >
+                            Delete
+                          </Button>
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </>
               )}
 
@@ -2334,7 +2631,7 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -2353,7 +2650,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="mt-32 space-y-4">
                     {paymentsError && (
                       <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                         {paymentsError}
@@ -2365,9 +2662,7 @@ function App() {
                       </div>
                     )}
                     {!paymentsLoading && payments.length === 0 && (
-                      <div className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-                        No payments recorded yet.
-                      </div>
+                      <EmptyState message="No payments recorded yet." />
                     )}
 
                     {payments.map((payment) => {
@@ -2457,7 +2752,7 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -2476,7 +2771,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="mt-32 space-y-4">
                     {claimsError && (
                       <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                         {claimsError}
@@ -2488,9 +2783,7 @@ function App() {
                       </div>
                     )}
                     {!claimsLoading && claims.length === 0 && (
-                      <div className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-                        No claims recorded yet.
-                      </div>
+                      <EmptyState message="No claims recorded yet." />
                     )}
 
                     {claims.map((claim) => (
@@ -2569,7 +2862,7 @@ function App() {
               kuriView === "completed-rounds" &&
               selectedKuri && (
                 <>
-                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -2585,11 +2878,9 @@ function App() {
                     </p>
                   </div>
 
-                  <div className="space-y-5">
+                  <div className="mt-32 space-y-5">
                     {completedRounds.length === 0 && (
-                      <div className="rounded-md border border-border px-3 py-6 text-center text-sm text-muted-foreground">
-                        No completed rounds yet.
-                      </div>
+                      <EmptyState message="No completed rounds yet." />
                     )}
 
                     {completedRounds.map((round) => (
@@ -2746,11 +3037,34 @@ function App() {
 
             {activeTab === "account" && (
               <div className="space-y-4">
-                <div className="sticky top-0 z-20 bg-background pb-4">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                  {accountView !== "menu" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountView("menu");
+                        setShowChangePasswordForm(false);
+                        setChangePasswordError("");
+                        setChangePasswordMessage("");
+                        setNewPassword("");
+                        setConfirmNewPassword("");
+                      }}
+                      className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                  )}
                   <h2 className="text-2xl font-semibold text-foreground">
-                    Account
+                    {accountView === "profile"
+                      ? "Profile"
+                      : accountView === "appearance"
+                        ? "Appearance"
+                        : accountView === "about"
+                          ? "About App"
+                        : "Account"}
                   </h2>
                 </div>
+                <div className={cn(accountView === "menu" ? "mt-20" : "mt-24")} />
                 {accountView === "menu" && (
                   <>
                     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -2765,15 +3079,23 @@ function App() {
                         className="flex h-12 w-full items-center justify-between border-b border-border px-4 text-sm font-medium text-foreground"
                       >
                         <span>Profile</span>
-                        <span className="text-muted-foreground">{">"}</span>
+                        <ChevronRight className="size-4 text-muted-foreground" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setAccountView("appearance")}
-                        className="flex h-12 w-full items-center justify-between px-4 text-sm font-medium text-foreground"
+                        className="flex h-12 w-full items-center justify-between border-b border-border px-4 text-sm font-medium text-foreground"
                       >
                         <span>Appearance</span>
-                        <span className="text-muted-foreground">{">"}</span>
+                        <ChevronRight className="size-4 text-muted-foreground" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAccountView("about")}
+                        className="flex h-12 w-full items-center justify-between px-4 text-sm font-medium text-foreground"
+                      >
+                        <span>About App</span>
+                        <ChevronRight className="size-4 text-muted-foreground" />
                       </button>
                     </div>
                     <div className="pt-2">
@@ -2789,30 +3111,78 @@ function App() {
                 )}
                 {accountView === "profile" && (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAccountView("menu");
-                        setShowChangePasswordForm(false);
-                        setChangePasswordError("");
-                        setChangePasswordMessage("");
-                        setNewPassword("");
-                        setConfirmNewPassword("");
-                      }}
-                      className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground"
-                    >
-                      <ChevronLeft className="size-4" />
-                      Back
-                    </button>
                     <div className="space-y-5 rounded-xl border border-border bg-card p-4">
                       <div>
-                        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                          Name
-                        </p>
-                        <p className="mt-1 text-sm font-medium text-foreground">
-                          {session?.user.user_metadata?.full_name ||
-                            "Kuri User"}
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                            Name
+                          </p>
+                          {!showChangeNameForm && (
+                            <button
+                              type="button"
+                              className="grid size-7 place-items-center rounded-md border border-border text-muted-foreground hover:bg-muted"
+                              onClick={() => {
+                                setShowChangeNameForm(true);
+                                setChangeNameError("");
+                                setChangeNameMessage("");
+                                setNewDisplayName(
+                                  session?.user.user_metadata?.full_name ||
+                                    "Kuri User",
+                                );
+                              }}
+                            >
+                              <Pencil className="size-4" />
+                            </button>
+                          )}
+                        </div>
+                        {!showChangeNameForm ? (
+                          <p className="mt-1 text-sm font-medium text-foreground">
+                            {session?.user.user_metadata?.full_name ||
+                              "Kuri User"}
+                          </p>
+                        ) : (
+                          <form className="mt-2 space-y-2" onSubmit={handleChangeName}>
+                            {changeNameError && (
+                              <p className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+                                {changeNameError}
+                              </p>
+                            )}
+                            {changeNameMessage && (
+                              <p className="rounded-md border border-emerald-500/40 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+                                {changeNameMessage}
+                              </p>
+                            )}
+                            <input
+                              type="text"
+                              value={newDisplayName}
+                              onChange={(e) => setNewDisplayName(e.target.value)}
+                              className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                              placeholder="Enter your full name"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="h-9 flex-1"
+                                onClick={() => {
+                                  setShowChangeNameForm(false);
+                                  setChangeNameError("");
+                                  setChangeNameMessage("");
+                                  setNewDisplayName("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                type="submit"
+                                className="h-9 flex-1"
+                                disabled={changeNameLoading}
+                              >
+                                {changeNameLoading ? "Saving..." : "Save"}
+                              </Button>
+                            </div>
+                          </form>
+                        )}
                       </div>
                       <div>
                         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -2905,29 +3275,64 @@ function App() {
                 )}
                 {accountView === "appearance" && (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => setAccountView("menu")}
-                      className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground"
-                    >
-                      <ChevronLeft className="size-4" />
-                      Back
-                    </button>
                     <div className="rounded-xl border border-border bg-card p-4">
                       <p className="mb-3 text-sm font-medium text-foreground">
                         Theme
                       </p>
-                      {themeToggle}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 rounded-md border border-border px-3 py-2 text-sm text-foreground">
+                          <input
+                            type="radio"
+                            name="theme-mode"
+                            checked={theme === "light"}
+                            onChange={() => setTheme("light")}
+                            className="size-4 accent-primary"
+                          />
+                          <span>Light</span>
+                        </label>
+                        <label className="flex items-center gap-3 rounded-md border border-border px-3 py-2 text-sm text-foreground">
+                          <input
+                            type="radio"
+                            name="theme-mode"
+                            checked={theme === "dark"}
+                            onChange={() => setTheme("dark")}
+                            className="size-4 accent-primary"
+                          />
+                          <span>Dark</span>
+                        </label>
+                      </div>
                     </div>
                   </>
+                )}
+                {accountView === "about" && (
+                  <div className="space-y-4 rounded-xl border border-border bg-card p-4">
+                    <h3 className="text-base font-semibold text-foreground">
+                      KuriApp
+                    </h3>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      KuriApp helps trusted groups track Kuri rounds with clear
+                      records for payments, claims, progress, and history.
+                    </p>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      This app is only for tracking and transparency. It does not
+                      collect, hold, or transfer money.
+                    </p>
+                    <div className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                      Version: 1.0.0
+                    </div>
+                  </div>
                 )}
               </div>
             )}
           </div>
 
           {showBottomMenu && (
-            <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background/95 px-5 py-5 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <nav className="rounded-2xl border border-border bg-card p-1.5">
+            <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[500px] px-5 py-5">
+              <nav className="relative rounded-full border border-border bg-card p-1.5">
+                <div
+                  className="absolute top-1.5 left-1.5 h-[calc(100%-0.75rem)] w-[calc((100%-0.75rem)/3)] rounded-full bg-primary/10 transition-transform duration-300 ease-out"
+                  style={{ transform: `translateX(${activeTabIndex * 100}%)` }}
+                />
                 <ul className="grid grid-cols-3">
                   {(
                     [
@@ -2945,9 +3350,9 @@ function App() {
                           if (tabId !== "account") setAccountView("menu");
                         }}
                         className={cn(
-                          "flex w-full flex-col items-center gap-1 rounded-xl py-2",
+                          "relative z-10 flex w-full flex-col items-center gap-1 rounded-full py-2 transition-colors duration-200",
                           activeTab === tabId
-                            ? "bg-primary/10 text-primary"
+                            ? "text-primary"
                             : "text-muted-foreground",
                         )}
                       >
@@ -2961,18 +3366,26 @@ function App() {
             </div>
           )}
 
-          <Drawer open={showAddKuri} onOpenChange={setShowAddKuri}>
-            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
+          <Drawer
+            open={showAddKuri}
+            onOpenChange={(open) => {
+              setShowAddKuri(open);
+              if (!open) resetKuriForm();
+            }}
+          >
+            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                  Add Kuri
+                  {isEditingKuri ? "Edit Kuri" : "Add Kuri"}
                 </DrawerTitle>
                 <DrawerDescription className="text-sm text-muted-foreground">
-                  Create a new Kuri to track
+                  {isEditingKuri
+                    ? "Update Kuri details"
+                    : "Create a new Kuri to track"}
                 </DrawerDescription>
               </DrawerHeader>
               <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitKuri}>
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {kuriDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {kuriDbError}
@@ -3006,17 +3419,20 @@ function App() {
                     />
                   </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
                     className="h-10 flex-1"
-                    onClick={() => setShowAddKuri(false)}
+                    onClick={() => {
+                      setShowAddKuri(false);
+                      resetKuriForm();
+                    }}
                   >
                     Cancel
                   </Button>
                   <Button type="submit" className="h-10 flex-1">
-                    Submit
+                    {isEditingKuri ? "Save Changes" : "Submit"}
                   </Button>
                 </div>
               </form>
@@ -3025,22 +3441,27 @@ function App() {
 
           <Drawer
             open={showNewRoundDrawer}
-            onOpenChange={setShowNewRoundDrawer}
+            onOpenChange={(open) => {
+              setShowNewRoundDrawer(open);
+              if (!open) resetRoundForm();
+            }}
           >
-            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
+            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                  New Round
+                  {isEditingRound ? "Edit Round" : "New Round"}
                 </DrawerTitle>
                 <DrawerDescription className="text-sm text-muted-foreground">
-                  Add round details for this kuri
+                  {isEditingRound
+                    ? "Update details for this round"
+                    : "Add round details for this kuri"}
                 </DrawerDescription>
               </DrawerHeader>
               <form
                 className="flex min-h-0 flex-1 flex-col"
                 onSubmit={submitRound}
               >
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4">
                   {roundDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {roundDbError}
@@ -3062,7 +3483,7 @@ function App() {
                       type="month"
                       value={roundStartMonth}
                       onChange={(e) => setRoundStartMonth(e.target.value)}
-                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
                     />
                   </label>
                   <label className="block text-sm font-medium text-foreground">
@@ -3123,28 +3544,21 @@ function App() {
                       placeholder="5"
                     />
                   </label>
-                  <label className="block text-sm font-medium text-foreground">
-                    Claimed Amount (Optional)
-                    <input
-                      type="number"
-                      value={roundClaimedAmount}
-                      onChange={(e) => setRoundClaimedAmount(e.target.value)}
-                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                      placeholder="0"
-                    />
-                  </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
                     className="h-10 flex-1"
-                    onClick={() => setShowNewRoundDrawer(false)}
+                    onClick={() => {
+                      setShowNewRoundDrawer(false);
+                      resetRoundForm();
+                    }}
                   >
                     Cancel
                   </Button>
                   <Button type="submit" className="h-10 flex-1">
-                    Submit
+                    {isEditingRound ? "Save Changes" : "Submit"}
                   </Button>
                 </div>
               </form>
@@ -3155,7 +3569,7 @@ function App() {
             open={showMarkPaymentDrawer}
             onOpenChange={setShowMarkPaymentDrawer}
           >
-            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
+            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   Mark a Payment
@@ -3165,7 +3579,7 @@ function App() {
                 </DrawerDescription>
               </DrawerHeader>
               <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitPayment}>
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {paymentDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {paymentDbError}
@@ -3202,7 +3616,7 @@ function App() {
                     type="date"
                     value={paidOnDate}
                     onChange={(e) => setPaidOnDate(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
                   />
                 </label>
                 <label className="block text-sm font-medium text-foreground">
@@ -3223,7 +3637,7 @@ function App() {
                     onChange={(e) =>
                       setPaymentAttachment(e.target.files?.[0] ?? null)
                     }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
+                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10 file:mr-3 file:h-7 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-0 file:text-xs file:leading-7 file:font-medium file:text-primary-foreground"
                   />
                 </label>
                 <label className="block text-sm font-medium text-foreground">
@@ -3237,7 +3651,7 @@ function App() {
                   />
                 </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
@@ -3262,7 +3676,7 @@ function App() {
             open={showMarkClaimDrawer}
             onOpenChange={setShowMarkClaimDrawer}
           >
-            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
+            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   Mark a Claim
@@ -3272,7 +3686,7 @@ function App() {
                 </DrawerDescription>
               </DrawerHeader>
               <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitClaim}>
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {claimDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {claimDbError}
@@ -3309,7 +3723,7 @@ function App() {
                     type="date"
                     value={claimDate}
                     onChange={(e) => setClaimDate(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
                   />
                 </label>
                 <label className="block text-sm font-medium text-foreground">
@@ -3330,7 +3744,7 @@ function App() {
                     onChange={(e) =>
                       setClaimAttachment(e.target.files?.[0] ?? null)
                     }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
+                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10 file:mr-3 file:h-7 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-0 file:text-xs file:leading-7 file:font-medium file:text-primary-foreground"
                   />
                 </label>
                 <label className="block text-sm font-medium text-foreground">
@@ -3344,7 +3758,7 @@ function App() {
                   />
                 </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
