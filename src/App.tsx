@@ -1778,7 +1778,7 @@ function App() {
       )}
 
       {stage === "home" && (
-        <section className="relative flex min-h-svh flex-1 flex-col">
+        <section className="relative flex h-svh min-h-svh flex-1 flex-col overflow-y-auto">
           <div
             className={cn(
               "flex-1 px-6 pt-8",
@@ -1787,7 +1787,7 @@ function App() {
           >
             {activeTab === "home" && (
               <>
-                <div className="mb-8">
+                <div className="sticky top-0 z-20 mb-6 bg-background pb-4">
                   <div>
                     <p className="text-2xl leading-8 tracking-[-0.6px] text-foreground">
                       Hi, welcome back
@@ -1840,43 +1840,44 @@ function App() {
 
             {activeTab === "kuries" && kuriView === "list" && (
               <>
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                    Kuries
-                  </h2>
-                  <Button
-                    size="icon-lg"
-                    className="size-10 rounded-full"
-                    onClick={() => setShowAddKuri(true)}
-                  >
-                    <Plus className="size-5" />
-                  </Button>
-                </div>
-
-                <div className="mb-5 flex flex-wrap gap-2">
-                  {(
-                    [
-                      "All",
-                      "Claimed",
-                      "Unclaimed",
-                      "Active",
-                      "Completed",
-                    ] as KuriFilter[]
-                  ).map((filter) => (
-                    <button
-                      key={filter}
-                      type="button"
-                      onClick={() => setKuriFilter(filter)}
-                      className={cn(
-                        "h-9 rounded-md border px-3 text-sm",
-                        kuriFilter === filter
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background text-foreground",
-                      )}
+                <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                      Kuries
+                    </h2>
+                    <Button
+                      size="icon-lg"
+                      className="size-10 rounded-full"
+                      onClick={() => setShowAddKuri(true)}
                     >
-                      {filter}
-                    </button>
-                  ))}
+                      <Plus className="size-5" />
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        "All",
+                        "Claimed",
+                        "Unclaimed",
+                        "Active",
+                      ] as KuriFilter[]
+                    ).map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setKuriFilter(filter)}
+                        className={cn(
+                          "h-9 rounded-md border px-3 text-sm",
+                          kuriFilter === filter
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-foreground",
+                        )}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -2002,16 +2003,18 @@ function App() {
               kuriView === "detail" &&
               selectedKuri && (
                 <>
-                  <button
-                    type="button"
-                    className="mb-6 grid size-10 place-items-center rounded-full border border-border bg-background"
-                    onClick={() => setKuriView("list")}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
-                  <h2 className="mb-5 text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                    {selectedKuri.name}
-                  </h2>
+                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                    <button
+                      type="button"
+                      className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
+                      onClick={() => setKuriView("list")}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                      {selectedKuri.name}
+                    </h2>
+                  </div>
                   <div className="mb-5 rounded-xl border border-border bg-card p-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -2323,21 +2326,23 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <button
-                    type="button"
-                    className="mb-6 grid size-10 place-items-center rounded-full border border-border bg-background"
-                    onClick={() => setKuriView("detail")}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
+                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                    <button
+                      type="button"
+                      className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
+                      onClick={() => setKuriView("detail")}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
 
-                  <div className="mb-5">
-                    <p className="text-sm text-muted-foreground">
-                      {selectedKuri.name} / {historyRound.roundName}
-                    </p>
-                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                      Payment History
-                    </h2>
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedKuri.name} / {historyRound.roundName}
+                      </p>
+                      <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                        Payment History
+                      </h2>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -2444,21 +2449,23 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <button
-                    type="button"
-                    className="mb-6 grid size-10 place-items-center rounded-full border border-border bg-background"
-                    onClick={() => setKuriView("detail")}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
+                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                    <button
+                      type="button"
+                      className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
+                      onClick={() => setKuriView("detail")}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
 
-                  <div className="mb-5">
-                    <p className="text-sm text-muted-foreground">
-                      {selectedKuri.name} / {historyRound.roundName}
-                    </p>
-                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                      Claim Details
-                    </h2>
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedKuri.name} / {historyRound.roundName}
+                      </p>
+                      <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                        Claim Details
+                      </h2>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -2554,19 +2561,21 @@ function App() {
               kuriView === "completed-rounds" &&
               selectedKuri && (
                 <>
-                  <button
-                    type="button"
-                    className="mb-6 grid size-10 place-items-center rounded-full border border-border bg-background"
-                    onClick={() => setKuriView("detail")}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
-                  <h2 className="mb-5 text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                    Completed Rounds
-                  </h2>
-                  <p className="mb-4 text-sm text-muted-foreground">
-                    {selectedKuri.name}
-                  </p>
+                  <div className="sticky top-0 z-20 mb-5 bg-background pb-4">
+                    <button
+                      type="button"
+                      className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
+                      onClick={() => setKuriView("detail")}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                      Completed Rounds
+                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {selectedKuri.name}
+                    </p>
+                  </div>
 
                   <div className="space-y-5">
                     {completedRounds.length === 0 && (
@@ -2729,9 +2738,11 @@ function App() {
 
             {activeTab === "account" && (
               <div className="space-y-4">
-                <h2 className="text-2xl font-semibold text-foreground">
-                  Account
-                </h2>
+                <div className="sticky top-0 z-20 bg-background pb-4">
+                  <h2 className="text-2xl font-semibold text-foreground">
+                    Account
+                  </h2>
+                </div>
                 {accountView === "menu" && (
                   <>
                     <div className="overflow-hidden rounded-xl border border-border bg-card">
