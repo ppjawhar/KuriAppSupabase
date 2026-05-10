@@ -10,12 +10,15 @@ import {
   Layers3,
   Moon,
   Plus,
+  RefreshCw,
   Trash2,
   UserCircle2,
   ShieldCheck,
   Sun,
   UserPlus,
   UsersRound,
+  Wallet,
+  WalletCards,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -470,43 +473,45 @@ function App() {
         return;
       }
 
-      const mapped: KuriRound[] = ((data ?? []) as KuriRoundRow[]).map((row) => {
-        const claimedAmount = Number(row.claimed_amount ?? 0);
-        const totalValue = Number(row.total_value ?? 0);
-        const progress = row.progress ?? 0;
-        const duration = row.duration ?? 12;
-        const status = computeRoundStatus(
-          row.start_month,
-          progress,
-          duration,
-          claimedAmount,
-          totalValue,
-        );
+      const mapped: KuriRound[] = ((data ?? []) as KuriRoundRow[]).map(
+        (row) => {
+          const claimedAmount = Number(row.claimed_amount ?? 0);
+          const totalValue = Number(row.total_value ?? 0);
+          const progress = row.progress ?? 0;
+          const duration = row.duration ?? 12;
+          const status = computeRoundStatus(
+            row.start_month,
+            progress,
+            duration,
+            claimedAmount,
+            totalValue,
+          );
 
-        return {
-          id: row.id,
-          kuriId: row.kuri_id,
-          roundName: row.round_name,
-          status,
-          claimStatus: mapClaimStatus(row.claim_status),
-          currency:
-            row.currency === "SGD" || row.currency === "DHR"
-              ? row.currency
-              : "INR",
-          monthlyAmount: Number(row.monthly_amount ?? 0),
-          numberOfClaims: row.number_of_claims ?? 1,
-          claimedAmount,
-          totalValue,
-          claimAmountPerClaim: Number(row.claim_amount_per_claim ?? 0),
-          startMonth: row.start_month,
-          endMonth: row.end_month,
-          paymentDate: row.payment_date ?? 1,
-          paymentSchedule: row.payment_schedule ?? [],
-          pendingClaimAmount: Number(row.pending_claim_amount ?? 0),
-          progress,
-          duration,
-        };
-      });
+          return {
+            id: row.id,
+            kuriId: row.kuri_id,
+            roundName: row.round_name,
+            status,
+            claimStatus: mapClaimStatus(row.claim_status),
+            currency:
+              row.currency === "SGD" || row.currency === "DHR"
+                ? row.currency
+                : "INR",
+            monthlyAmount: Number(row.monthly_amount ?? 0),
+            numberOfClaims: row.number_of_claims ?? 1,
+            claimedAmount,
+            totalValue,
+            claimAmountPerClaim: Number(row.claim_amount_per_claim ?? 0),
+            startMonth: row.start_month,
+            endMonth: row.end_month,
+            paymentDate: row.payment_date ?? 1,
+            paymentSchedule: row.payment_schedule ?? [],
+            pendingClaimAmount: Number(row.pending_claim_amount ?? 0),
+            progress,
+            duration,
+          };
+        },
+      );
 
       setRounds(mapped);
     };
@@ -814,11 +819,12 @@ function App() {
     );
     const hasActiveRound = Boolean(active);
     const hasAnyRound = kuriRounds.length > 0;
-    const cardStatus: "Active" | "Completed" | "No active round" = hasActiveRound
-      ? "Active"
-      : latestCompleted
-        ? "Completed"
-        : "No active round";
+    const cardStatus: "Active" | "Completed" | "No active round" =
+      hasActiveRound
+        ? "Active"
+        : latestCompleted
+          ? "Completed"
+          : "No active round";
     const cardClaimStatus: "Claimed" | "Partially Claimed" | "Unclaimed" =
       active?.claimStatus ?? latestCompleted?.claimStatus ?? "Unclaimed";
 
@@ -840,8 +846,7 @@ function App() {
     if (kuriFilter === "All") return true;
     if (kuriFilter === "Active") return kuri.cardStatus === "Active";
     if (kuriFilter === "Completed") return kuri.cardStatus === "Completed";
-    if (kuriFilter === "Claimed")
-      return kuri.cardClaimStatus === "Claimed";
+    if (kuriFilter === "Claimed") return kuri.cardClaimStatus === "Claimed";
     if (kuriFilter === "Unclaimed") return kuri.cardClaimStatus === "Unclaimed";
     return true;
   });
@@ -851,15 +856,17 @@ function App() {
   const hasActiveRound = rounds.some((round) => round.status === "Active");
   const activeRound = rounds.find((round) => round.status === "Active");
   const historyRound =
-    rounds.find((round) => round.id === historyRoundId) ?? activeRound ?? rounds[0];
+    rounds.find((round) => round.id === historyRoundId) ??
+    activeRound ??
+    rounds[0];
   const completedRounds = rounds.filter(
     (round) => round.status === "Completed",
   );
   const selectedKuriHasActiveRound = Boolean(
     selectedKuri &&
-      allRounds.some(
-        (round) => round.kuriId === selectedKuri.id && round.status === "Active",
-      ),
+    allRounds.some(
+      (round) => round.kuriId === selectedKuri.id && round.status === "Active",
+    ),
   );
   const nextClaimSequence = activeRound
     ? Math.min(claimsCount + 1, activeRound.numberOfClaims)
@@ -871,12 +878,34 @@ function App() {
         0,
       )
     : 0;
+  const activeRounds = allRounds.filter((round) => round.status === "Active");
+  const activeKuriesCount = new Set(activeRounds.map((round) => round.kuriId))
+    .size;
+  const toPayThisMonth = activeRounds.reduce(
+    (sum, round) => sum + round.monthlyAmount,
+    0,
+  );
+  const unclaimedRemaining = activeRounds.reduce(
+    (sum, round) => sum + round.pendingClaimAmount,
+    0,
+  );
+  const showBottomMenu =
+    activeTab === "home" ||
+    activeTab === "account" ||
+    (activeTab === "kuries" && kuriView === "list");
 
   const formatInr = (value: number) => `INR ${value.toLocaleString("en-IN")}`;
   const formatMoney = (currency: "INR" | "SGD" | "DHR", value: number) => {
     const symbol =
       currency === "INR" ? "INR" : currency === "SGD" ? "SGD" : "DHR";
     return `${symbol} ${value.toLocaleString("en-IN")}`;
+  };
+  const formatCompactInr = (value: number) => {
+    const compact = new Intl.NumberFormat("en-IN", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
+    return `Rs ${compact}`;
   };
   const formatMonthLabel = (value: string) => {
     if (!value) return "-";
@@ -904,8 +933,7 @@ function App() {
     status: "Claimed" | "Partially Claimed" | "Unclaimed",
   ) => {
     if (status === "Claimed") return "bg-emerald-100 text-emerald-700";
-    if (status === "Partially Claimed")
-      return "bg-amber-100 text-amber-700";
+    if (status === "Partially Claimed") return "bg-amber-100 text-amber-700";
     return "bg-rose-100 text-rose-700";
   };
   const claimPillIconClass = (
@@ -1402,9 +1430,13 @@ function App() {
       return;
     }
 
-    const remainingKuries = kuries.filter((kuri) => kuri.id !== selectedKuri.id);
+    const remainingKuries = kuries.filter(
+      (kuri) => kuri.id !== selectedKuri.id,
+    );
     setKuries(remainingKuries);
-    setAllRounds((prev) => prev.filter((round) => round.kuriId !== selectedKuri.id));
+    setAllRounds((prev) =>
+      prev.filter((round) => round.kuriId !== selectedKuri.id),
+    );
     setRounds([]);
     setSelectedKuriId(remainingKuries[0]?.id ?? "");
     setKuriView("list");
@@ -1429,7 +1461,7 @@ function App() {
   );
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-[500px] flex-col overflow-hidden bg-background text-foreground">
+    <main className="mx-auto flex min-h-svh w-full max-w-[800px] flex-col overflow-hidden bg-background text-foreground">
       {stage === "splash" && (
         <section className="flex min-h-svh flex-1 flex-col items-center bg-primary px-8 pb-12 pt-24 text-center text-primary-foreground">
           <div className="mt-48 flex flex-1 flex-col items-center">
@@ -1747,27 +1779,61 @@ function App() {
 
       {stage === "home" && (
         <section className="relative flex min-h-svh flex-1 flex-col">
-          <div className="flex-1 px-6 pt-8">
+          <div
+            className={cn(
+              "flex-1 px-6 pt-8",
+              showBottomMenu ? "pb-28" : "pb-6",
+            )}
+          >
             {activeTab === "home" && (
               <>
-                <div className="mb-8 flex items-start justify-between gap-3">
+                <div className="mb-8">
                   <div>
-                    <p className="text-2xl leading-8 text-foreground">
+                    <p className="text-2xl leading-8 tracking-[-0.6px] text-foreground">
                       Hi, welcome back
                     </p>
-                    <h2 className="text-[30px] leading-9 font-semibold text-foreground">
+                    <h2 className="text-[30px] leading-9 font-semibold tracking-[-0.025em] text-foreground">
                       {session?.user.user_metadata?.full_name || "Kuri User"}
                     </h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {session?.user.email}
-                    </p>
                   </div>
-                  {themeToggle}
                 </div>
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <p className="text-sm text-muted-foreground">
-                    Use the `Kuries` tab to manage your personal ROSCA rounds.
-                  </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
+                    <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#DCFCE7] px-2.5 text-[12px] leading-[130%] font-medium text-[#22C55E]">
+                      <RefreshCw className="size-3.5" />
+                      <span>Active</span>
+                    </div>
+                    <p className="text-[22px] leading-[130%] font-bold text-foreground">
+                      {activeKuriesCount}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-[130%] text-[#64748B]">
+                      Kuries
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
+                    <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#FFF2E2] px-2.5 text-[12px] leading-[130%] font-medium text-[#F97316]">
+                      <Wallet className="size-3.5" />
+                      <span>To Pay</span>
+                    </div>
+                    <p className="text-[22px] leading-[130%] font-bold text-foreground">
+                      {formatCompactInr(toPayThisMonth)}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-[130%] text-[#64748B]">
+                      Every month
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
+                    <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#DBEAFE] px-2.5 text-[12px] leading-[130%] font-medium text-[#60A5FA]">
+                      <WalletCards className="size-3.5" />
+                      <span>Unclaimed</span>
+                    </div>
+                    <p className="text-[22px] leading-[130%] font-bold text-foreground">
+                      {formatCompactInr(unclaimedRemaining)}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-[130%] text-[#64748B]">
+                      Remaining
+                    </p>
+                  </article>
                 </div>
               </>
             )}
@@ -1895,7 +1961,9 @@ function App() {
                       {kuri.hasActiveRound && (
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div>
-                            <p className="text-muted-foreground">Kuri Amount:</p>
+                            <p className="text-muted-foreground">
+                              Kuri Amount:
+                            </p>
                             <p className="text-sm leading-5 font-medium text-foreground">
                               {formatInr(kuri.cardKuriAmount)}
                             </p>
@@ -1918,7 +1986,9 @@ function App() {
                           </p>
                           <p className="font-medium text-foreground">
                             {kuri.latestCompletedRound.roundName} •{" "}
-                            {formatMonthLabel(kuri.latestCompletedRound.endMonth)}
+                            {formatMonthLabel(
+                              kuri.latestCompletedRound.endMonth,
+                            )}
                           </p>
                         </div>
                       )}
@@ -2221,7 +2291,11 @@ function App() {
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>
-                            <Button type="button" variant="outline" className="h-10 flex-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-10 flex-1"
+                            >
                               Cancel
                             </Button>
                           </AlertDialogCancel>
@@ -2229,7 +2303,9 @@ function App() {
                             <Button
                               type="button"
                               className="h-10 flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              disabled={selectedKuriHasActiveRound || deleteKuriLoading}
+                              disabled={
+                                selectedKuriHasActiveRound || deleteKuriLoading
+                              }
                               onClick={deleteSelectedKuri}
                             >
                               {deleteKuriLoading ? "Deleting..." : "Delete"}
@@ -2422,7 +2498,8 @@ function App() {
                               Claim Sequence:
                             </p>
                             <p className="font-medium text-foreground">
-                              {claim.claimSequence}/{historyRound.numberOfClaims}
+                              {claim.claimSequence}/
+                              {historyRound.numberOfClaims}
                             </p>
                           </div>
                           <div>
@@ -2438,9 +2515,7 @@ function App() {
                             </p>
                           </div>
                           <div>
-                            <p className="text-muted-foreground">
-                              Claim Date:
-                            </p>
+                            <p className="text-muted-foreground">Claim Date:</p>
                             <p className="font-medium text-foreground">
                               {formatDateLabel(claim.claimedOn)}
                             </p>
@@ -2450,7 +2525,9 @@ function App() {
                         <div className="mt-4">
                           <Button
                             type="button"
-                            variant={claim.attachmentUrl ? "default" : "outline"}
+                            variant={
+                              claim.attachmentUrl ? "default" : "outline"
+                            }
                             className="h-10 w-full rounded-md text-sm"
                             disabled={!claim.attachmentUrl}
                             onClick={() => {
@@ -2543,7 +2620,9 @@ function App() {
                             </p>
                           </div>
                           <div>
-                            <p className="text-muted-foreground">No. of Claims</p>
+                            <p className="text-muted-foreground">
+                              No. of Claims
+                            </p>
                             <p className="font-medium text-foreground">
                               {round.numberOfClaims}
                             </p>
@@ -2551,8 +2630,8 @@ function App() {
                           <div>
                             <p className="text-muted-foreground">Claimed</p>
                             <p className="font-medium text-foreground">
-                              {formatMoney(round.currency, round.claimedAmount)}/
-                              {formatMoney(round.currency, round.totalValue)}
+                              {formatMoney(round.currency, round.claimedAmount)}
+                              /{formatMoney(round.currency, round.totalValue)}
                             </p>
                           </div>
                           <div>
@@ -2560,7 +2639,10 @@ function App() {
                               Pending Amount to Claim
                             </p>
                             <p className="font-medium text-foreground">
-                              {formatMoney(round.currency, round.pendingClaimAmount)}
+                              {formatMoney(
+                                round.currency,
+                                round.pendingClaimAmount,
+                              )}
                             </p>
                           </div>
                         </div>
@@ -2575,13 +2657,16 @@ function App() {
                             />
                           </div>
                           <p className="text-sm font-medium text-foreground">
-                            {String(round.progress).padStart(2, "0")}/{round.duration}
+                            {String(round.progress).padStart(2, "0")}/
+                            {round.duration}
                           </p>
                         </div>
 
                         <div className="space-y-2 text-sm">
                           <div className="flex items-center justify-between">
-                            <p className="text-muted-foreground">Start Month:</p>
+                            <p className="text-muted-foreground">
+                              Start Month:
+                            </p>
                             <p className="font-medium text-foreground">
                               {formatMonthLabel(round.startMonth)}
                             </p>
@@ -2601,7 +2686,10 @@ function App() {
                                 round.currency,
                                 Math.max(
                                   round.monthlyAmount *
-                                    Math.max(round.duration - round.progress, 0),
+                                    Math.max(
+                                      round.duration - round.progress,
+                                      0,
+                                    ),
                                   0,
                                 ),
                               )}
@@ -2703,7 +2791,8 @@ function App() {
                           Name
                         </p>
                         <p className="mt-1 text-sm font-medium text-foreground">
-                          {session?.user.user_metadata?.full_name || "Kuri User"}
+                          {session?.user.user_metadata?.full_name ||
+                            "Kuri User"}
                         </p>
                       </div>
                       <div>
@@ -2758,7 +2847,9 @@ function App() {
                           <input
                             type="password"
                             value={confirmNewPassword}
-                            onChange={(e) => setConfirmNewPassword(e.target.value)}
+                            onChange={(e) =>
+                              setConfirmNewPassword(e.target.value)
+                            }
                             className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
                             placeholder="Confirm new password"
                             autoComplete="new-password"
@@ -2815,39 +2906,41 @@ function App() {
             )}
           </div>
 
-          <div className="border-t border-border px-5 py-5">
-            <nav className="rounded-2xl border border-border bg-card p-1.5">
-              <ul className="grid grid-cols-3">
-                {(
-                  [
-                    ["home", House, "Home"],
-                    ["kuries", Layers3, "Kuries"],
-                    ["account", UserCircle2, "Account"],
-                  ] as const
-                ).map(([tabId, Icon, label]) => (
-                  <li key={tabId}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab(tabId);
-                        if (tabId !== "kuries") setKuriView("list");
-                        if (tabId !== "account") setAccountView("menu");
-                      }}
-                      className={cn(
-                        "flex w-full flex-col items-center gap-1 rounded-xl py-2",
-                        activeTab === tabId
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      <Icon className="size-5" />
-                      <span className="text-xs font-medium">{label}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          </div>
+          {showBottomMenu && (
+            <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background/95 px-5 py-5 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <nav className="rounded-2xl border border-border bg-card p-1.5">
+                <ul className="grid grid-cols-3">
+                  {(
+                    [
+                      ["home", House, "Home"],
+                      ["kuries", Layers3, "Kuries"],
+                      ["account", UserCircle2, "Account"],
+                    ] as const
+                  ).map(([tabId, Icon, label]) => (
+                    <li key={tabId}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab(tabId);
+                          if (tabId !== "kuries") setKuriView("list");
+                          if (tabId !== "account") setAccountView("menu");
+                        }}
+                        className={cn(
+                          "flex w-full flex-col items-center gap-1 rounded-xl py-2",
+                          activeTab === tabId
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        <Icon className="size-5" />
+                        <span className="text-xs font-medium">{label}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </div>
+          )}
 
           <Drawer open={showAddKuri} onOpenChange={setShowAddKuri}>
             <DrawerContent className="border-border bg-card">
@@ -2913,7 +3006,7 @@ function App() {
             open={showNewRoundDrawer}
             onOpenChange={setShowNewRoundDrawer}
           >
-            <DrawerContent className="border-border bg-card">
+            <DrawerContent className="flex max-h-[92svh] flex-col border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   New Round
@@ -2922,98 +3015,105 @@ function App() {
                   Add round details for this kuri
                 </DrawerDescription>
               </DrawerHeader>
-              <form className="space-y-4 px-4 pb-4" onSubmit={submitRound}>
-                {roundDbError && (
-                  <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
-                    {roundDbError}
-                  </div>
-                )}
-                <label className="block text-sm font-medium text-foreground">
-                  Round Name
-                  <input
-                    type="text"
-                    value={roundName}
-                    onChange={(e) => setRoundName(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Round name"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Start Month
-                  <input
-                    type="month"
-                    value={roundStartMonth}
-                    onChange={(e) => setRoundStartMonth(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Duration (No. of month)
-                  <input
-                    type="number"
-                    value={roundDuration}
-                    onChange={(e) => setRoundDuration(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="12"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Currency
-                  <select
-                    value={roundCurrency}
-                    onChange={(e) =>
-                      setRoundCurrency(e.target.value as "INR" | "SGD" | "DHR")
-                    }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  >
-                    <option value="INR">INR</option>
-                    <option value="SGD">SGD</option>
-                    <option value="DHR">DHR</option>
-                  </select>
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Monthly Amount
-                  <input
-                    type="number"
-                    value={roundMonthlyAmount}
-                    onChange={(e) => setRoundMonthlyAmount(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="10000"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  No. of Claims
-                  <input
-                    type="number"
-                    value={roundClaims}
-                    onChange={(e) => setRoundClaims(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="2"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Payment Date
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={roundPaymentDate}
-                    onChange={(e) => setRoundPaymentDate(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="5"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Claimed Amount (Optional)
-                  <input
-                    type="number"
-                    value={roundClaimedAmount}
-                    onChange={(e) => setRoundClaimedAmount(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="0"
-                  />
-                </label>
-                <div className="flex gap-2">
+              <form
+                className="flex min-h-0 flex-1 flex-col"
+                onSubmit={submitRound}
+              >
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4">
+                  {roundDbError && (
+                    <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+                      {roundDbError}
+                    </div>
+                  )}
+                  <label className="block text-sm font-medium text-foreground">
+                    Round Name
+                    <input
+                      type="text"
+                      value={roundName}
+                      onChange={(e) => setRoundName(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Round name"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Start Month
+                    <input
+                      type="month"
+                      value={roundStartMonth}
+                      onChange={(e) => setRoundStartMonth(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Duration (No. of month)
+                    <input
+                      type="number"
+                      value={roundDuration}
+                      onChange={(e) => setRoundDuration(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="12"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Currency
+                    <select
+                      value={roundCurrency}
+                      onChange={(e) =>
+                        setRoundCurrency(
+                          e.target.value as "INR" | "SGD" | "DHR",
+                        )
+                      }
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    >
+                      <option value="INR">INR</option>
+                      <option value="SGD">SGD</option>
+                      <option value="DHR">DHR</option>
+                    </select>
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Monthly Amount
+                    <input
+                      type="number"
+                      value={roundMonthlyAmount}
+                      onChange={(e) => setRoundMonthlyAmount(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="10000"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    No. of Claims
+                    <input
+                      type="number"
+                      value={roundClaims}
+                      onChange={(e) => setRoundClaims(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="2"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Payment Date
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={roundPaymentDate}
+                      onChange={(e) => setRoundPaymentDate(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="5"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Claimed Amount (Optional)
+                    <input
+                      type="number"
+                      value={roundClaimedAmount}
+                      onChange={(e) => setRoundClaimedAmount(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="0"
+                    />
+                  </label>
+                </div>
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
                   <Button
                     type="button"
                     variant="outline"
