@@ -10,22 +10,31 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['vite.svg'],
+      includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
+        id: '/',
         name: 'KuriApp',
         short_name: 'KuriApp',
         description: 'Simple, transparent Kuri tracking for trusted groups.',
         theme_color: '#4338ca',
         background_color: '#f3f4f6',
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui', 'browser'],
         start_url: '/',
         scope: '/',
+        orientation: 'portrait',
         icons: [
           {
-            src: '/vite.svg',
+            src: '/icons.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable',
+          },
+          {
+            src: '/favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
           },
         ],
       },
