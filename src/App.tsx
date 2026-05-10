@@ -754,6 +754,7 @@ function App() {
       menu: 0,
       profile: 1,
       appearance: 1,
+      about: 1,
     };
     const prev = prevAccountViewRef.current;
     if (prev === accountView) return;
@@ -1018,7 +1019,7 @@ function App() {
     return d.toLocaleDateString("en-GB");
   };
   const claimPillWidthClass = (
-    status: "Claimed" | "Partially Claimed" | "Unclaimed",
+    _status: "Claimed" | "Partially Claimed" | "Unclaimed",
   ) => {
     return "w-fit";
   };
