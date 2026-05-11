@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   BadgeIndianRupee,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -10,15 +11,14 @@ import {
   LayoutDashboard,
   Layers3,
   MoreVertical,
-  Moon,
   Pencil,
   PackageOpen,
   Plus,
+  PieChart,
   RefreshCw,
   Trash2,
   UserCircle2,
   ShieldCheck,
-  Sun,
   UserPlus,
   UsersRound,
   Wallet,
@@ -278,6 +278,7 @@ const ONBOARDING_KEY = "kuriapp_onboarding_done";
 const THEME_KEY = "kuriapp_theme";
 
 function App() {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [stage, setStage] = useState<AppStage>("splash");
   const [session, setSession] = useState<Session | null>(null);
   const [index, setIndex] = useState(0);
@@ -343,8 +344,12 @@ function App() {
   const [claims, setClaims] = useState<KuriClaimItem[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState("");
+  const [cashflowWindow, setCashflowWindow] = useState<6 | 12>(6);
+  const [homePayments, setHomePayments] = useState<KuriPaymentItem[]>([]);
+  const [homeClaims, setHomeClaims] = useState<KuriClaimItem[]>([]);
   const [historyRoundId, setHistoryRoundId] = useState("");
   const [showMarkPaymentDrawer, setShowMarkPaymentDrawer] = useState(false);
+  const [editingPaymentId, setEditingPaymentId] = useState("");
   const [paymentDbError, setPaymentDbError] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paidOnDate, setPaidOnDate] = useState("");
@@ -352,6 +357,7 @@ function App() {
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentAttachment, setPaymentAttachment] = useState<File | null>(null);
   const [showMarkClaimDrawer, setShowMarkClaimDrawer] = useState(false);
+  const [editingClaimId, setEditingClaimId] = useState("");
   const [claimDbError, setClaimDbError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimDate, setClaimDate] = useState("");
@@ -391,6 +397,9 @@ function App() {
       setSession(existingSession);
 
       if (existingSession) {
+        setActiveTab("home");
+        setKuriView("list");
+        setAccountView("menu");
         setStage("home");
         return;
       }
@@ -409,7 +418,12 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      if (nextSession) setStage("home");
+      if (nextSession) {
+        setActiveTab("home");
+        setKuriView("list");
+        setAccountView("menu");
+        setStage("home");
+      }
     });
 
     return () => {
@@ -549,6 +563,7 @@ function App() {
         .select(
           "id,kuri_id,round_name,status,claim_status,currency,monthly_amount,number_of_claims,claimed_amount,total_value,claim_amount_per_claim,start_month,end_month,payment_date,payment_schedule,pending_claim_amount,progress,duration,created_at",
         )
+        .eq("user_id", session.user.id)
         .order("created_at", { ascending: false });
 
       if (error) return;
@@ -721,6 +736,59 @@ function App() {
   }, [session?.user?.id, selectedKuriId, rounds, dataRefreshVersion]);
 
   useEffect(() => {
+    const loadHomeChartData = async () => {
+      if (!session?.user?.id) {
+        setHomePayments([]);
+        setHomeClaims([]);
+        return;
+      }
+
+      const [{ data: paymentData }, { data: claimData }] = await Promise.all([
+        supabase
+          .from("kuri_payments")
+          .select(
+            "id,round_id,payment_month,amount_paid,paid_on,reference,note,attachment_url,created_at",
+          )
+          .eq("user_id", session.user.id),
+        supabase
+          .from("kuri_claims")
+          .select(
+            "id,round_id,claim_sequence,amount_claimed,claimed_on,reference,note,attachment_url,created_at",
+          )
+          .eq("user_id", session.user.id),
+      ]);
+
+      setHomePayments(
+        ((paymentData ?? []) as KuriPaymentRow[]).map((row) => ({
+          id: row.id,
+          roundId: row.round_id,
+          paymentMonth: row.payment_month,
+          amountPaid: Number(row.amount_paid ?? 0),
+          paidOn: row.paid_on,
+          reference: row.reference ?? undefined,
+          note: row.note ?? undefined,
+          attachmentUrl: row.attachment_url ?? undefined,
+        })),
+      );
+
+      setHomeClaims(
+        ((claimData ?? []) as KuriClaimRow[]).map((row) => ({
+          id: row.id,
+          roundId: row.round_id,
+          claimSequence: row.claim_sequence,
+          amountClaimed: Number(row.amount_claimed ?? 0),
+          claimedOn: row.claimed_on,
+          reference: row.reference ?? undefined,
+          note: row.note ?? undefined,
+          attachmentUrl: row.attachment_url ?? undefined,
+        })),
+      );
+    };
+
+    void loadHomeChartData();
+  }, [session?.user?.id, dataRefreshVersion]);
+
+  useEffect(() => {
     if (activeTab !== "kuries") {
       prevKuriViewRef.current = kuriView;
       return;
@@ -767,6 +835,15 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [activeTab, accountView]);
 
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTop = 0;
+    window.requestAnimationFrame(() => {
+      container.scrollTop = 0;
+    });
+  }, [stage, authView, activeTab, kuriView, accountView]);
+
   const current = onboardingScreens[index];
 
   const completeOnboarding = () => {
@@ -800,6 +877,10 @@ function App() {
       return;
     }
 
+    setActiveTab("home");
+    setKuriView("list");
+    setAccountView("menu");
+    setStage("home");
     setAuthMessage("Signed in successfully.");
   };
 
@@ -820,6 +901,9 @@ function App() {
       password: signUpPassword,
       options: {
         data: { full_name: signUpName },
+        emailRedirectTo:
+          import.meta.env.VITE_AUTH_REDIRECT_URL ??
+          window.location.origin,
       },
     });
 
@@ -840,8 +924,13 @@ function App() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setSession(null);
+    setActiveTab("home");
+    setKuriView("list");
+    setAccountView("menu");
     setStage("auth");
     setAuthView("signin");
+    setAuthError("");
+    setAuthMessage("");
   };
 
   const handleChangePassword = async (
@@ -976,13 +1065,86 @@ function App() {
   const activeRounds = allRounds.filter((round) => round.status === "Active");
   const activeKuriesCount = new Set(activeRounds.map((round) => round.kuriId))
     .size;
-  const toPayThisMonth = activeRounds.reduce(
-    (sum, round) => sum + round.monthlyAmount,
+  const toPayThisMonth = activeRounds.reduce((sum, round) => {
+    const isPayable = round.progress < round.duration;
+    return sum + (isPayable ? round.monthlyAmount : 0);
+  }, 0);
+  const totalRemainingToPay = activeRounds.reduce((sum, round) => {
+    const remainingInstallments = Math.max(round.duration - round.progress, 0);
+    return sum + round.monthlyAmount * remainingInstallments;
+  }, 0);
+  const unclaimedRemaining = activeRounds.reduce(
+    (sum, round) => sum + Math.max(round.totalValue - round.claimedAmount, 0),
     0,
   );
-  const unclaimedRemaining = activeRounds.reduce(
-    (sum, round) => sum + round.pendingClaimAmount,
+  const claimStatusData = [
+    {
+      label: "Claimed",
+      value: activeRounds.filter((round) => round.claimStatus === "Claimed").length,
+      color: "#22C55E",
+    },
+    {
+      label: "Partially Claimed",
+      value: activeRounds.filter(
+        (round) => round.claimStatus === "Partially Claimed",
+      ).length,
+      color: "#F59E0B",
+    },
+    {
+      label: "Unclaimed",
+      value: activeRounds.filter((round) => round.claimStatus === "Unclaimed").length,
+      color: "#60A5FA",
+    },
+  ];
+  const totalClaimStatusCount = claimStatusData.reduce(
+    (sum, item) => sum + item.value,
     0,
+  );
+  const donutGradient =
+    totalClaimStatusCount === 0
+      ? "#E2E8F0"
+      : (() => {
+          let start = 0;
+          return claimStatusData
+            .filter((item) => item.value > 0)
+            .map((item) => {
+              const portion = (item.value / totalClaimStatusCount) * 100;
+              const end = start + portion;
+              const segment = `${item.color} ${start}% ${end}%`;
+              start = end;
+              return segment;
+            })
+            .join(", ");
+        })();
+  const monthKey = (value: Date) =>
+    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+  const chartMonthLabel = (value: string) => {
+    const [year, month] = value.split("-").map(Number);
+    return new Date(year, month - 1, 1).toLocaleDateString("en-US", {
+      month: "short",
+    });
+  };
+  const cashflowMonths = Array.from({ length: cashflowWindow }, (_, idx) => {
+    const now = new Date();
+    const d = new Date(
+      now.getFullYear(),
+      now.getMonth() - (cashflowWindow - 1 - idx),
+      1,
+    );
+    return monthKey(d);
+  });
+  const monthlyCashflowData = cashflowMonths.map((month) => {
+    const paid = homePayments
+      .filter((item) => (item.paidOn || "").slice(0, 7) === month)
+      .reduce((sum, item) => sum + item.amountPaid, 0);
+    const claimed = homeClaims
+      .filter((item) => (item.claimedOn || "").slice(0, 7) === month)
+      .reduce((sum, item) => sum + item.amountClaimed, 0);
+    return { month, paid, claimed };
+  });
+  const monthlyCashflowMax = Math.max(
+    ...monthlyCashflowData.map((item) => Math.max(item.paid, item.claimed)),
+    1,
   );
   const showBottomMenu =
     activeTab === "home" ||
@@ -1001,7 +1163,7 @@ function App() {
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(value);
-    return `Rs ${compact}`;
+    return `₹${compact}`;
   };
   const formatMonthLabel = (value: string) => {
     if (!value) return "-";
@@ -1064,16 +1226,35 @@ function App() {
     d.setMonth(d.getMonth() + monthsToAdd);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
+  const monthToNumber = (monthValue: string) => {
+    const [year, month] = monthValue.split("-").map(Number);
+    return year * 12 + (month - 1);
+  };
   const nextInstallment = activeRound
     ? Math.min(activeRound.progress + 1, activeRound.duration)
     : 1;
   const nextPaymentMonth = activeRound
     ? addMonths(activeRound.startMonth, Math.max(nextInstallment - 1, 0))
     : "";
-  const monthToNumber = (monthValue: string) => {
-    const [year, month] = monthValue.split("-").map(Number);
-    return year * 12 + (month - 1);
-  };
+  const editingPayment =
+    payments.find((payment) => payment.id === editingPaymentId) ?? null;
+  const paymentFormRound = editingPayment ? historyRound : activeRound;
+  const paymentFormInstallment =
+    editingPayment && historyRound
+      ? Math.max(
+          monthToNumber(editingPayment.paymentMonth) -
+            monthToNumber(historyRound.startMonth) +
+            1,
+          1,
+        )
+      : nextInstallment;
+  const paymentFormAmount =
+    editingPayment?.amountPaid ?? paymentFormRound?.monthlyAmount ?? 0;
+  const editingClaim = claims.find((claim) => claim.id === editingClaimId) ?? null;
+  const claimFormRound = editingClaim ? historyRound : activeRound;
+  const claimFormSequence = editingClaim?.claimSequence ?? nextClaimSequence;
+  const claimFormAmount =
+    editingClaim?.amountClaimed ?? claimFormRound?.claimAmountPerClaim ?? 0;
   const buildPaymentSchedule = (startMonth: string, duration: number) =>
     Array.from({ length: Math.max(duration, 0) }, (_, idx) =>
       addMonths(startMonth, idx),
@@ -1368,18 +1549,38 @@ function App() {
     bumpDataRefresh();
   };
 
+  const resetPaymentForm = () => {
+    setEditingPaymentId("");
+    setPaymentDbError("");
+    setPaidOnDate("");
+    setPaymentRef("");
+    setPaymentNote("");
+    setPaymentAttachment(null);
+  };
+
+  const startEditPayment = (payment: KuriPaymentItem) => {
+    setEditingPaymentId(payment.id);
+    setPaymentDbError("");
+    setPaidOnDate(payment.paidOn);
+    setPaymentRef(payment.reference ?? "");
+    setPaymentNote(payment.note ?? "");
+    setPaymentAttachment(null);
+    setShowMarkPaymentDrawer(true);
+  };
+
   const submitPayment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!session?.user?.id || !selectedKuri || !activeRound) return;
+    if (!session?.user?.id || !selectedKuri || !paymentFormRound) return;
 
-    const paidAmountValue = Number(activeRound.monthlyAmount);
-    const paymentMonth = nextPaymentMonth;
+    const isEditingPayment = Boolean(editingPayment);
+    const paidAmountValue = Number(paymentFormAmount);
+    const paymentMonth = editingPayment?.paymentMonth ?? nextPaymentMonth;
 
     if (!paymentMonth || !paidOnDate || !paidAmountValue) {
       setPaymentDbError("Please fill all required payment fields.");
       return;
     }
-    if (activeRound.progress >= activeRound.duration) {
+    if (!isEditingPayment && activeRound && activeRound.progress >= activeRound.duration) {
       setPaymentDbError("All installments are already paid for this round.");
       return;
     }
@@ -1391,28 +1592,30 @@ function App() {
     setPaymentDbError("");
     setPaymentLoading(true);
 
-    const { data: existing, error: existingError } = await supabase
-      .from("kuri_payments")
-      .select("id")
-      .eq("round_id", activeRound.id)
-      .eq("payment_month", paymentMonth)
-      .maybeSingle();
+    if (!isEditingPayment) {
+      const { data: existing, error: existingError } = await supabase
+        .from("kuri_payments")
+        .select("id")
+        .eq("round_id", paymentFormRound.id)
+        .eq("payment_month", paymentMonth)
+        .maybeSingle();
 
-    if (existingError) {
-      setPaymentLoading(false);
-      setPaymentDbError(existingError.message);
-      return;
-    }
-    if (existing) {
-      setPaymentLoading(false);
-      setPaymentDbError("A payment for this month is already recorded.");
-      return;
+      if (existingError) {
+        setPaymentLoading(false);
+        setPaymentDbError(existingError.message);
+        return;
+      }
+      if (existing) {
+        setPaymentLoading(false);
+        setPaymentDbError("A payment for this month is already recorded.");
+        return;
+      }
     }
 
-    let attachmentUrl: string | null = null;
+    let attachmentUrl: string | null = editingPayment?.attachmentUrl ?? null;
     if (paymentAttachment) {
       const extension = paymentAttachment.name.split(".").pop() || "bin";
-      const filePath = `${session.user.id}/${activeRound.id}/${Date.now()}.${extension}`;
+      const filePath = `${session.user.id}/${paymentFormRound.id}/${Date.now()}.${extension}`;
       const { error: uploadError } = await supabase.storage
         .from("payment-attachments")
         .upload(filePath, paymentAttachment, { upsert: false });
@@ -1427,21 +1630,45 @@ function App() {
       attachmentUrl = publicData.publicUrl;
     }
 
-    const { error: insertError } = await supabase.from("kuri_payments").insert({
-      user_id: session.user.id,
-      kuri_id: selectedKuri.id,
-      round_id: activeRound.id,
-      payment_month: paymentMonth,
-      amount_paid: paidAmountValue,
-      paid_on: paidOnDate,
-      reference: paymentRef.trim() || null,
-      note: paymentNote.trim() || null,
-      attachment_url: attachmentUrl,
-    });
+    const { error: upsertError } = isEditingPayment
+      ? await supabase
+          .from("kuri_payments")
+          .update({
+            paid_on: paidOnDate,
+            reference: paymentRef.trim() || null,
+            note: paymentNote.trim() || null,
+            attachment_url: attachmentUrl,
+          })
+          .eq("id", editingPaymentId)
+      : await supabase.from("kuri_payments").insert({
+          user_id: session.user.id,
+          kuri_id: selectedKuri.id,
+          round_id: paymentFormRound.id,
+          payment_month: paymentMonth,
+          amount_paid: paidAmountValue,
+          paid_on: paidOnDate,
+          reference: paymentRef.trim() || null,
+          note: paymentNote.trim() || null,
+          attachment_url: attachmentUrl,
+        });
 
-    if (insertError) {
+    if (upsertError) {
       setPaymentLoading(false);
-      setPaymentDbError(insertError.message);
+      setPaymentDbError(upsertError.message);
+      return;
+    }
+
+    if (isEditingPayment) {
+      setPaymentLoading(false);
+      resetPaymentForm();
+      setShowMarkPaymentDrawer(false);
+      bumpDataRefresh();
+      return;
+    }
+
+    if (!activeRound) {
+      setPaymentLoading(false);
+      setPaymentDbError("Active round not found.");
       return;
     }
 
@@ -1495,24 +1722,41 @@ function App() {
       ),
     );
 
-    setPaidOnDate("");
-    setPaymentRef("");
-    setPaymentNote("");
-    setPaymentAttachment(null);
+    resetPaymentForm();
     setShowMarkPaymentDrawer(false);
     bumpDataRefresh();
   };
 
+  const resetClaimForm = () => {
+    setEditingClaimId("");
+    setClaimDbError("");
+    setClaimDate("");
+    setClaimReference("");
+    setClaimNote("");
+    setClaimAttachment(null);
+  };
+
+  const startEditClaim = (claim: KuriClaimItem) => {
+    setEditingClaimId(claim.id);
+    setClaimDbError("");
+    setClaimDate(claim.claimedOn);
+    setClaimReference(claim.reference ?? "");
+    setClaimNote(claim.note ?? "");
+    setClaimAttachment(null);
+    setShowMarkClaimDrawer(true);
+  };
+
   const submitClaim = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!session?.user?.id || !selectedKuri || !activeRound) return;
+    if (!session?.user?.id || !selectedKuri || !claimFormRound) return;
 
-    const claimAmount = Number(activeRound.claimAmountPerClaim);
+    const isEditingClaim = Boolean(editingClaim);
+    const claimAmount = Number(claimFormAmount);
     if (!claimDate || claimAmount <= 0) {
       setClaimDbError("Please fill all required claim fields.");
       return;
     }
-    if (claimsCount >= activeRound.numberOfClaims) {
+    if (!isEditingClaim && activeRound && claimsCount >= activeRound.numberOfClaims) {
       setClaimDbError("All claims are already recorded for this round.");
       return;
     }
@@ -1520,10 +1764,10 @@ function App() {
     setClaimDbError("");
     setClaimLoading(true);
 
-    let attachmentUrl: string | null = null;
+    let attachmentUrl: string | null = editingClaim?.attachmentUrl ?? null;
     if (claimAttachment) {
       const extension = claimAttachment.name.split(".").pop() || "bin";
-      const filePath = `${session.user.id}/${activeRound.id}/claim-${Date.now()}.${extension}`;
+      const filePath = `${session.user.id}/${claimFormRound.id}/claim-${Date.now()}.${extension}`;
       const { error: uploadError } = await supabase.storage
         .from("claim-attachments")
         .upload(filePath, claimAttachment, { upsert: false });
@@ -1538,22 +1782,46 @@ function App() {
       attachmentUrl = publicData.publicUrl;
     }
 
-    const claimSequence = claimsCount + 1;
-    const { error: insertError } = await supabase.from("kuri_claims").insert({
-      user_id: session.user.id,
-      kuri_id: selectedKuri.id,
-      round_id: activeRound.id,
-      claim_sequence: claimSequence,
-      amount_claimed: claimAmount,
-      claimed_on: claimDate,
-      reference: claimReference.trim() || null,
-      note: claimNote.trim() || null,
-      attachment_url: attachmentUrl,
-    });
+    const claimSequence = isEditingClaim ? claimFormSequence : claimsCount + 1;
+    const { error: upsertError } = isEditingClaim
+      ? await supabase
+          .from("kuri_claims")
+          .update({
+            claimed_on: claimDate,
+            reference: claimReference.trim() || null,
+            note: claimNote.trim() || null,
+            attachment_url: attachmentUrl,
+          })
+          .eq("id", editingClaimId)
+      : await supabase.from("kuri_claims").insert({
+          user_id: session.user.id,
+          kuri_id: selectedKuri.id,
+          round_id: claimFormRound.id,
+          claim_sequence: claimSequence,
+          amount_claimed: claimAmount,
+          claimed_on: claimDate,
+          reference: claimReference.trim() || null,
+          note: claimNote.trim() || null,
+          attachment_url: attachmentUrl,
+        });
 
-    if (insertError) {
+    if (upsertError) {
       setClaimLoading(false);
-      setClaimDbError(insertError.message);
+      setClaimDbError(upsertError.message);
+      return;
+    }
+
+    if (isEditingClaim) {
+      setClaimLoading(false);
+      resetClaimForm();
+      setShowMarkClaimDrawer(false);
+      bumpDataRefresh();
+      return;
+    }
+
+    if (!activeRound) {
+      setClaimLoading(false);
+      setClaimDbError("Active round not found.");
       return;
     }
 
@@ -1608,10 +1876,7 @@ function App() {
       ),
     );
     setClaimsCount((prev) => prev + 1);
-    setClaimDate("");
-    setClaimReference("");
-    setClaimNote("");
-    setClaimAttachment(null);
+    resetClaimForm();
     setShowMarkClaimDrawer(false);
     bumpDataRefresh();
   };
@@ -1650,23 +1915,6 @@ function App() {
     setShowDeleteKuriDialog(false);
     bumpDataRefresh();
   };
-
-  const themeToggle = (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-9 rounded-md"
-      onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
-    >
-      {theme === "light" ? (
-        <Moon className="size-4" />
-      ) : (
-        <Sun className="size-4" />
-      )}
-      <span>{theme === "light" ? "Dark" : "Light"} mode</span>
-    </Button>
-  );
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-[800px] flex-col overflow-hidden bg-background text-foreground">
@@ -1775,13 +2023,15 @@ function App() {
       )}
 
       {stage === "auth" && (
-        <section className="relative flex h-svh min-h-svh flex-1 flex-col overflow-y-auto px-6 pt-20 pb-28">
-          <div className="mb-6 flex justify-end">{themeToggle}</div>
+        <section
+          ref={scrollContainerRef}
+          className="relative flex h-svh min-h-svh flex-1 flex-col overflow-y-auto px-6 pt-20 pb-28"
+        >
           {authView === "signin" ? (
             <div className="space-y-12">
-              <div className="space-y-6">
+              <div className="space-y-2">
                 <h2 className="text-2xl leading-8 font-bold tracking-[-0.6px] text-foreground">
-                  Sign in to your KuriApp account
+                  Sign in to your KuriApp
                 </h2>
                 <p className="text-sm leading-5 text-muted-foreground">
                   Use your email and password to continue.
@@ -1861,7 +2111,7 @@ function App() {
             </div>
           ) : (
             <div className="space-y-8">
-              <div className="space-y-6">
+              <div className="space-y-2">
                 <h2 className="text-2xl leading-8 font-bold tracking-[-0.6px] text-foreground">
                   Create your KuriApp account
                 </h2>
@@ -1983,17 +2233,20 @@ function App() {
       )}
 
       {stage === "home" && (
-        <section className="relative flex h-svh min-h-svh flex-1 flex-col overflow-y-auto">
+        <section
+          ref={scrollContainerRef}
+          className="relative flex h-svh min-h-svh flex-1 flex-col overflow-y-auto"
+        >
           <div
             className={cn(
-              "flex-1 px-6 pt-8",
+              "flex-1 px-6 pt-6",
               showBottomMenu ? "pb-28" : "pb-6",
               pageTransitionClass,
             )}
           >
             {activeTab === "home" && (
               <>
-                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                   <div className="mt-2">
                     <p className="text-2xl leading-8 tracking-[-0.6px] text-foreground">
                       Hi, welcome back
@@ -2003,7 +2256,7 @@ function App() {
                     </h2>
                   </div>
                 </div>
-                <div className="mt-28 grid grid-cols-2 gap-3">
+                <div className="mt-24 grid grid-cols-2 gap-3">
                   <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
                     <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#DCFCE7] px-2.5 text-[12px] leading-[130%] font-medium text-[#22C55E]">
                       <RefreshCw className="size-3.5" />
@@ -2019,7 +2272,7 @@ function App() {
                   <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
                     <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#FFF2E2] px-2.5 text-[12px] leading-[130%] font-medium text-[#F97316]">
                       <Wallet className="size-3.5" />
-                      <span>To Pay</span>
+                      <span>Monthly Payment</span>
                     </div>
                     <p className="text-[22px] leading-[130%] font-bold text-foreground">
                       {formatCompactInr(toPayThisMonth)}
@@ -2040,13 +2293,128 @@ function App() {
                       Remaining
                     </p>
                   </article>
+                  <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
+                    <div className="mb-4 inline-flex h-7 items-center gap-1.5 rounded-full bg-[#FEE2E2] px-2.5 text-[12px] leading-[130%] font-medium text-[#EF4444]">
+                      <Wallet className="size-3.5" />
+                      <span>To Pay</span>
+                    </div>
+                    <p className="text-[22px] leading-[130%] font-bold text-foreground">
+                      {formatCompactInr(totalRemainingToPay)}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-[130%] text-[#64748B]">
+                      Total remaining
+                    </p>
+                  </article>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3">
+                  <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="size-4 text-[#3B82F6]" />
+                        <h3 className="text-sm font-semibold text-foreground">
+                          Monthly Cashflow
+                        </h3>
+                      </div>
+                      <div className="inline-flex rounded-full border border-border bg-background p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setCashflowWindow(6)}
+                          className={cn(
+                            "rounded-full px-2 py-1 text-[11px] leading-none",
+                            cashflowWindow === 6
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          6M
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCashflowWindow(12)}
+                          className={cn(
+                            "rounded-full px-2 py-1 text-[11px] leading-none",
+                            cashflowWindow === 12
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          12M
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {monthlyCashflowData.map((item) => (
+                        <div key={item.month} className="grid grid-cols-[36px_1fr] items-center gap-2">
+                          <span className="text-[11px] text-[#64748B]">
+                            {chartMonthLabel(item.month)}
+                          </span>
+                          <div className="space-y-1">
+                            <div className="h-2 rounded-full bg-[#DBEAFE]">
+                              <div
+                                className="h-2 rounded-full bg-[#3B82F6]"
+                                style={{
+                                  width: `${(item.paid / monthlyCashflowMax) * 100}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="h-2 rounded-full bg-[#DCFCE7]">
+                              <div
+                                className="h-2 rounded-full bg-[#22C55E]"
+                                style={{
+                                  width: `${(item.claimed / monthlyCashflowMax) * 100}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex items-center gap-4 text-[11px] text-[#64748B]">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="size-2 rounded-full bg-[#3B82F6]" />
+                        Paid
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="size-2 rounded-full bg-[#22C55E]" />
+                        Claimed
+                      </span>
+                    </div>
+                  </article>
+                  <article className="rounded-xl border border-[#CBD5E1] bg-card p-3">
+                    <div className="mb-3 flex items-center gap-2">
+                      <PieChart className="size-4 text-[#F59E0B]" />
+                      <h3 className="text-sm font-semibold text-foreground">
+                        Claim Status
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="relative size-20 rounded-full"
+                        style={{ background: `conic-gradient(${donutGradient})` }}
+                      >
+                        <div className="absolute inset-3 rounded-full bg-card" />
+                      </div>
+                      <div className="space-y-2">
+                        {claimStatusData.map((item) => (
+                          <div key={item.label} className="flex items-center gap-2 text-xs text-[#64748B]">
+                            <span
+                              className="size-2.5 rounded-full"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <span className="text-foreground">{item.value}</span>
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </article>
                 </div>
               </>
             )}
 
             {activeTab === "kuries" && kuriView === "list" && (
               <>
-                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                       Kuries
@@ -2086,7 +2454,7 @@ function App() {
                   </div>
                 </div>
 
-                <div className="mt-32 space-y-3">
+                <div className="mt-24 space-y-3">
                   {kuriDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {kuriDbError}
@@ -2208,7 +2576,7 @@ function App() {
               kuriView === "detail" &&
               selectedKuri && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                     <div className="mb-4 flex items-center justify-between">
                       <button
                         type="button"
@@ -2258,7 +2626,7 @@ function App() {
                       {selectedKuri.name}
                     </h2>
                   </div>
-                  <div className="mt-28 mb-5 rounded-xl border border-border bg-card p-4">
+                  <div className="mt-24 mb-5 rounded-xl border border-border bg-card p-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-muted-foreground">
@@ -2494,13 +2862,10 @@ function App() {
                           className="h-10 w-full rounded-md text-sm"
                           onClick={() => {
                             if (!activeRound) return;
-                            setPaymentDbError("");
+                            resetPaymentForm();
                             setPaidOnDate(
                               new Date().toISOString().split("T")[0],
                             );
-                            setPaymentRef("");
-                            setPaymentNote("");
-                            setPaymentAttachment(null);
                             setShowMarkPaymentDrawer(true);
                           }}
                         >
@@ -2511,13 +2876,10 @@ function App() {
                           className="h-10 w-full rounded-md text-sm"
                           onClick={() => {
                             if (!activeRound) return;
-                            setClaimDbError("");
+                            resetClaimForm();
                             setClaimDate(
                               new Date().toISOString().split("T")[0],
                             );
-                            setClaimReference("");
-                            setClaimNote("");
-                            setClaimAttachment(null);
                             setShowMarkClaimDrawer(true);
                           }}
                         >
@@ -2632,7 +2994,7 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -2651,7 +3013,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="mt-32 space-y-4">
+                  <div className="mt-[7rem] space-y-4">
                     {paymentsError && (
                       <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                         {paymentsError}
@@ -2719,7 +3081,15 @@ function App() {
                             </div>
                           </div>
 
-                          <div className="mt-4">
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-10 w-full rounded-md text-sm"
+                              onClick={() => startEditPayment(payment)}
+                            >
+                              Edit Payment
+                            </Button>
                             <Button
                               type="button"
                               variant={
@@ -2753,7 +3123,7 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -2772,7 +3142,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="mt-32 space-y-4">
+                  <div className="mt-[7rem] space-y-4">
                     {claimsError && (
                       <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                         {claimsError}
@@ -2831,7 +3201,15 @@ function App() {
                           </div>
                         </div>
 
-                        <div className="mt-4">
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-10 w-full rounded-md text-sm"
+                            onClick={() => startEditClaim(claim)}
+                          >
+                            Edit Claim
+                          </Button>
                           <Button
                             type="button"
                             variant={
@@ -2863,7 +3241,7 @@ function App() {
               kuriView === "completed-rounds" &&
               selectedKuri && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -2871,15 +3249,16 @@ function App() {
                     >
                       <ChevronLeft className="size-4" />
                     </button>
-                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                      Completed Rounds
-                    </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {selectedKuri.name}
                     </p>
+                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                      Completed Rounds
+                    </h2>
+                    
                   </div>
 
-                  <div className="mt-32 space-y-5">
+                  <div className="mt-[7rem] space-y-5">
                     {completedRounds.length === 0 && (
                       <EmptyState message="No completed rounds yet." />
                     )}
@@ -3038,7 +3417,7 @@ function App() {
 
             {activeTab === "account" && (
               <div className="space-y-4">
-                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-4 pb-4">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
                   {accountView !== "menu" && (
                     <button
                       type="button"
@@ -3055,17 +3434,20 @@ function App() {
                       <ChevronLeft className="size-4" />
                     </button>
                   )}
-                  <h2 className="text-2xl font-semibold text-foreground">
-                    {accountView === "profile"
-                      ? "Profile"
-                      : accountView === "appearance"
-                        ? "Appearance"
-                        : accountView === "about"
-                          ? "About App"
-                        : "Account"}
-                  </h2>
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                      {accountView === "profile"
+                        ? "Profile"
+                        : accountView === "appearance"
+                          ? "Appearance"
+                          : accountView === "about"
+                            ? "About App"
+                            : "Account"}
+                    </h2>
+                    {accountView === "menu" && <span className="size-10" aria-hidden />}
+                  </div>
                 </div>
-                <div className={cn(accountView === "menu" ? "mt-20" : "mt-24")} />
+                <div className={cn(accountView === "menu" ? "mt-20" : "mt-[6.5rem]")} />
                 {accountView === "menu" && (
                   <>
                     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -3568,15 +3950,20 @@ function App() {
 
           <Drawer
             open={showMarkPaymentDrawer}
-            onOpenChange={setShowMarkPaymentDrawer}
+            onOpenChange={(open) => {
+              setShowMarkPaymentDrawer(open);
+              if (!open) resetPaymentForm();
+            }}
           >
             <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                  Mark a Payment
+                  {editingPayment ? "Edit Payment" : "Mark a Payment"}
                 </DrawerTitle>
                 <DrawerDescription className="text-sm text-muted-foreground">
-                  Record payment for this round
+                  {editingPayment
+                    ? "Update payment details for this installment"
+                    : "Record payment for this round"}
                 </DrawerDescription>
               </DrawerHeader>
               <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitPayment}>
@@ -3591,7 +3978,7 @@ function App() {
                   <input
                     type="text"
                     readOnly
-                    value={`${String(nextInstallment).padStart(2, "0")} / ${activeRound?.duration ?? 0}`}
+                    value={`${String(paymentFormInstallment).padStart(2, "0")} / ${paymentFormRound?.duration ?? 0}`}
                     className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
                   />
                 </label>
@@ -3601,10 +3988,10 @@ function App() {
                     type="text"
                     readOnly
                     value={
-                      activeRound
+                      paymentFormRound
                         ? formatMoney(
-                            activeRound.currency,
-                            activeRound.monthlyAmount,
+                            paymentFormRound.currency,
+                            paymentFormAmount,
                           )
                         : ""
                     }
@@ -3657,7 +4044,10 @@ function App() {
                     type="button"
                     variant="outline"
                     className="h-10 flex-1"
-                    onClick={() => setShowMarkPaymentDrawer(false)}
+                    onClick={() => {
+                      setShowMarkPaymentDrawer(false);
+                      resetPaymentForm();
+                    }}
                   >
                     Cancel
                   </Button>
@@ -3666,7 +4056,11 @@ function App() {
                     className="h-10 flex-1"
                     disabled={paymentLoading}
                   >
-                    {paymentLoading ? "Saving..." : "Save Payment"}
+                    {paymentLoading
+                      ? "Saving..."
+                      : editingPayment
+                        ? "Save Changes"
+                        : "Save Payment"}
                   </Button>
                 </div>
               </form>
@@ -3675,15 +4069,20 @@ function App() {
 
           <Drawer
             open={showMarkClaimDrawer}
-            onOpenChange={setShowMarkClaimDrawer}
+            onOpenChange={(open) => {
+              setShowMarkClaimDrawer(open);
+              if (!open) resetClaimForm();
+            }}
           >
             <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
               <DrawerHeader className="text-left">
                 <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                  Mark a Claim
+                  {editingClaim ? "Edit Claim" : "Mark a Claim"}
                 </DrawerTitle>
                 <DrawerDescription className="text-sm text-muted-foreground">
-                  Record claim received for this round
+                  {editingClaim
+                    ? "Update claim details for this installment"
+                    : "Record claim received for this round"}
                 </DrawerDescription>
               </DrawerHeader>
               <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitClaim}>
@@ -3699,10 +4098,10 @@ function App() {
                     type="text"
                     readOnly
                     value={
-                      activeRound
+                      claimFormRound
                         ? formatMoney(
-                            activeRound.currency,
-                            activeRound.claimAmountPerClaim,
+                            claimFormRound.currency,
+                            claimFormAmount,
                           )
                         : ""
                     }
@@ -3714,7 +4113,7 @@ function App() {
                   <input
                     type="text"
                     readOnly
-                    value={`${String(nextClaimSequence).padStart(2, "0")} / ${activeRound?.numberOfClaims ?? 0}`}
+                    value={`${String(claimFormSequence).padStart(2, "0")} / ${claimFormRound?.numberOfClaims ?? 0}`}
                     className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
                   />
                 </label>
@@ -3764,7 +4163,10 @@ function App() {
                     type="button"
                     variant="outline"
                     className="h-10 flex-1"
-                    onClick={() => setShowMarkClaimDrawer(false)}
+                    onClick={() => {
+                      setShowMarkClaimDrawer(false);
+                      resetClaimForm();
+                    }}
                   >
                     Cancel
                   </Button>
@@ -3773,7 +4175,11 @@ function App() {
                     className="h-10 flex-1"
                     disabled={claimLoading}
                   >
-                    {claimLoading ? "Saving..." : "Save Claim"}
+                    {claimLoading
+                      ? "Saving..."
+                      : editingClaim
+                        ? "Save Changes"
+                        : "Save Claim"}
                   </Button>
                 </div>
               </form>
