@@ -37,12 +37,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -350,6 +351,8 @@ function App() {
   const [historyRoundId, setHistoryRoundId] = useState("");
   const [showMarkPaymentDrawer, setShowMarkPaymentDrawer] = useState(false);
   const [editingPaymentId, setEditingPaymentId] = useState("");
+  const [deletingPaymentId, setDeletingPaymentId] = useState("");
+  const [showDeletePaymentDialog, setShowDeletePaymentDialog] = useState(false);
   const [paymentDbError, setPaymentDbError] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paidOnDate, setPaidOnDate] = useState("");
@@ -369,6 +372,7 @@ function App() {
   const [deleteKuriLoading, setDeleteKuriLoading] = useState(false);
   const [dataRefreshVersion, setDataRefreshVersion] = useState(0);
   const [pageTransitionClass, setPageTransitionClass] = useState("");
+  const [isWideDrawer, setIsWideDrawer] = useState(false);
   const prevKuriViewRef = useRef<KuriView>("list");
   const prevAccountViewRef = useRef<AccountView>("menu");
 
@@ -377,6 +381,14 @@ function App() {
     const initialTheme: ThemeMode = storedTheme ?? "light";
     setTheme(initialTheme);
     document.documentElement.classList.toggle("dark", initialTheme === "dark");
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 701px)");
+    const update = () => setIsWideDrawer(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -660,7 +672,13 @@ function App() {
     };
 
     void loadPayments();
-  }, [session?.user?.id, selectedKuriId, rounds, historyRoundId, dataRefreshVersion]);
+  }, [
+    session?.user?.id,
+    selectedKuriId,
+    rounds,
+    historyRoundId,
+    dataRefreshVersion,
+  ]);
 
   useEffect(() => {
     const loadClaims = async () => {
@@ -708,7 +726,13 @@ function App() {
     };
 
     void loadClaims();
-  }, [session?.user?.id, selectedKuriId, rounds, historyRoundId, dataRefreshVersion]);
+  }, [
+    session?.user?.id,
+    selectedKuriId,
+    rounds,
+    historyRoundId,
+    dataRefreshVersion,
+  ]);
 
   useEffect(() => {
     const loadClaimsCount = async () => {
@@ -902,8 +926,7 @@ function App() {
       options: {
         data: { full_name: signUpName },
         emailRedirectTo:
-          import.meta.env.VITE_AUTH_REDIRECT_URL ??
-          window.location.origin,
+          import.meta.env.VITE_AUTH_REDIRECT_URL ?? window.location.origin,
       },
     });
 
@@ -1080,7 +1103,8 @@ function App() {
   const claimStatusData = [
     {
       label: "Claimed",
-      value: activeRounds.filter((round) => round.claimStatus === "Claimed").length,
+      value: activeRounds.filter((round) => round.claimStatus === "Claimed")
+        .length,
       color: "#22C55E",
     },
     {
@@ -1092,7 +1116,8 @@ function App() {
     },
     {
       label: "Unclaimed",
-      value: activeRounds.filter((round) => round.claimStatus === "Unclaimed").length,
+      value: activeRounds.filter((round) => round.claimStatus === "Unclaimed")
+        .length,
       color: "#60A5FA",
     },
   ];
@@ -1150,7 +1175,9 @@ function App() {
     activeTab === "home" ||
     activeTab === "account" ||
     (activeTab === "kuries" && kuriView === "list");
-  const activeTabIndex = activeTab === "home" ? 0 : activeTab === "kuries" ? 1 : 2;
+  const sheetSide = isWideDrawer ? "right" : "bottom";
+  const activeTabIndex =
+    activeTab === "home" ? 0 : activeTab === "kuries" ? 1 : 2;
 
   const formatInr = (value: number) => `INR ${value.toLocaleString("en-IN")}`;
   const formatMoney = (currency: "INR" | "SGD" | "DHR", value: number) => {
@@ -1250,7 +1277,8 @@ function App() {
       : nextInstallment;
   const paymentFormAmount =
     editingPayment?.amountPaid ?? paymentFormRound?.monthlyAmount ?? 0;
-  const editingClaim = claims.find((claim) => claim.id === editingClaimId) ?? null;
+  const editingClaim =
+    claims.find((claim) => claim.id === editingClaimId) ?? null;
   const claimFormRound = editingClaim ? historyRound : activeRound;
   const claimFormSequence = editingClaim?.claimSequence ?? nextClaimSequence;
   const claimFormAmount =
@@ -1306,8 +1334,7 @@ function App() {
     setShowKuriActions(false);
     setShowAddKuri(true);
   };
-  const bumpDataRefresh = () =>
-    setDataRefreshVersion((current) => current + 1);
+  const bumpDataRefresh = () => setDataRefreshVersion((current) => current + 1);
   const resetRoundForm = () => {
     setRoundName("");
     setRoundStartMonth("");
@@ -1568,6 +1595,77 @@ function App() {
     setShowMarkPaymentDrawer(true);
   };
 
+  const requestDeletePayment = (paymentId: string) => {
+    setDeletingPaymentId(paymentId);
+    setPaymentDbError("");
+    setShowDeletePaymentDialog(true);
+  };
+
+  const deletePayment = async () => {
+    if (!deletingPaymentId) return;
+    const paymentToDelete = payments.find(
+      (payment) => payment.id === deletingPaymentId,
+    );
+    if (!paymentToDelete) {
+      setPaymentDbError("Payment record not found.");
+      setShowDeletePaymentDialog(false);
+      return;
+    }
+
+    const targetRound = rounds.find((round) => round.id === paymentToDelete.roundId);
+    if (!targetRound) {
+      setPaymentDbError("Round not found for this payment.");
+      setShowDeletePaymentDialog(false);
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("kuri_payments")
+      .delete()
+      .eq("id", deletingPaymentId);
+
+    if (deleteError) {
+      setPaymentDbError(deleteError.message);
+      return;
+    }
+
+    const { count, error: countError } = await supabase
+      .from("kuri_payments")
+      .select("id", { count: "exact", head: true })
+      .eq("round_id", targetRound.id);
+
+    if (countError) {
+      setPaymentDbError(countError.message);
+      return;
+    }
+
+    const nextProgress = Math.min(count ?? 0, Math.max(targetRound.duration, 0));
+    const nextStatus = computeRoundStatus(
+      targetRound.startMonth,
+      nextProgress,
+      targetRound.duration,
+      targetRound.claimedAmount,
+      targetRound.totalValue,
+    );
+
+    const { error: updateError } = await supabase
+      .from("kuri_rounds")
+      .update({
+        progress: nextProgress,
+        status: nextStatus,
+      })
+      .eq("id", targetRound.id);
+
+    if (updateError) {
+      setPaymentDbError(updateError.message);
+      return;
+    }
+
+    setShowDeletePaymentDialog(false);
+    setDeletingPaymentId("");
+    bumpDataRefresh();
+  };
+
   const submitPayment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!session?.user?.id || !selectedKuri || !paymentFormRound) return;
@@ -1580,7 +1678,11 @@ function App() {
       setPaymentDbError("Please fill all required payment fields.");
       return;
     }
-    if (!isEditingPayment && activeRound && activeRound.progress >= activeRound.duration) {
+    if (
+      !isEditingPayment &&
+      activeRound &&
+      activeRound.progress >= activeRound.duration
+    ) {
       setPaymentDbError("All installments are already paid for this round.");
       return;
     }
@@ -1756,7 +1858,11 @@ function App() {
       setClaimDbError("Please fill all required claim fields.");
       return;
     }
-    if (!isEditingClaim && activeRound && claimsCount >= activeRound.numberOfClaims) {
+    if (
+      !isEditingClaim &&
+      activeRound &&
+      claimsCount >= activeRound.numberOfClaims
+    ) {
       setClaimDbError("All claims are already recorded for this round.");
       return;
     }
@@ -2045,27 +2151,27 @@ function App() {
               >
                 <div className="space-y-3 pb-4">
                   <label className="block text-sm leading-5 font-medium text-foreground">
-                  Email Address
-                  <input
-                    type="email"
-                    value={signInEmail}
-                    onChange={(e) => setSignInEmail(e.target.value)}
-                    required
-                    className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                    placeholder="Enter your email address"
-                  />
+                    Email Address
+                    <input
+                      type="email"
+                      value={signInEmail}
+                      onChange={(e) => setSignInEmail(e.target.value)}
+                      required
+                      className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                      placeholder="Enter your email address"
+                    />
                   </label>
 
                   <label className="block text-sm leading-5 font-medium text-foreground">
-                  Password
-                  <input
-                    type="password"
-                    value={signInPassword}
-                    onChange={(e) => setSignInPassword(e.target.value)}
-                    required
-                    className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                    placeholder="Enter your password"
-                  />
+                    Password
+                    <input
+                      type="password"
+                      value={signInPassword}
+                      onChange={(e) => setSignInPassword(e.target.value)}
+                      required
+                      className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                      placeholder="Enter your password"
+                    />
                   </label>
 
                   <button
@@ -2127,15 +2233,15 @@ function App() {
               >
                 <div className="space-y-3 pb-4">
                   <label className="block text-sm leading-5 font-medium text-foreground">
-                  Full Name
-                  <input
-                    type="text"
-                    value={signUpName}
-                    onChange={(e) => setSignUpName(e.target.value)}
-                    required
-                    className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                    placeholder="Enter your full name"
-                  />
+                    Full Name
+                    <input
+                      type="text"
+                      value={signUpName}
+                      onChange={(e) => setSignUpName(e.target.value)}
+                      required
+                      className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                      placeholder="Enter your full name"
+                    />
                   </label>
 
                   <p className="text-sm leading-5 text-muted-foreground">
@@ -2143,39 +2249,39 @@ function App() {
                   </p>
 
                   <label className="block text-sm leading-5 font-medium text-foreground">
-                  Email Address
-                  <input
-                    type="email"
-                    value={signUpEmail}
-                    onChange={(e) => setSignUpEmail(e.target.value)}
-                    required
-                    className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                    placeholder="Enter your email address"
-                  />
+                    Email Address
+                    <input
+                      type="email"
+                      value={signUpEmail}
+                      onChange={(e) => setSignUpEmail(e.target.value)}
+                      required
+                      className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                      placeholder="Enter your email address"
+                    />
                   </label>
 
                   <label className="block text-sm leading-5 font-medium text-foreground">
-                  Password
-                  <input
-                    type="password"
-                    value={signUpPassword}
-                    onChange={(e) => setSignUpPassword(e.target.value)}
-                    required
-                    className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                    placeholder="Enter a password"
-                  />
+                    Password
+                    <input
+                      type="password"
+                      value={signUpPassword}
+                      onChange={(e) => setSignUpPassword(e.target.value)}
+                      required
+                      className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                      placeholder="Enter a password"
+                    />
                   </label>
 
                   <label className="block text-sm leading-5 font-medium text-foreground">
-                  Confirm Password
-                  <input
-                    type="password"
-                    value={signUpConfirmPassword}
-                    onChange={(e) => setSignUpConfirmPassword(e.target.value)}
-                    required
-                    className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-                    placeholder="Enter your password again"
-                  />
+                    Confirm Password
+                    <input
+                      type="password"
+                      value={signUpConfirmPassword}
+                      onChange={(e) => setSignUpConfirmPassword(e.target.value)}
+                      required
+                      className="mt-2 h-12 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                      placeholder="Enter your password again"
+                    />
                   </label>
 
                   <div className="flex items-center gap-3 pt-2 text-sm leading-6">
@@ -2212,7 +2318,7 @@ function App() {
             </div>
           )}
 
-          <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[500px] border-t border-border bg-background/95 px-6 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[800px] border-t border-border bg-background/95 px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <Button
               type="submit"
               form={authView === "signin" ? "signin-form" : "signup-form"}
@@ -2246,7 +2352,7 @@ function App() {
           >
             {activeTab === "home" && (
               <>
-                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                   <div className="mt-2">
                     <p className="text-2xl leading-8 tracking-[-0.6px] text-foreground">
                       Hi, welcome back
@@ -2344,7 +2450,10 @@ function App() {
                     </div>
                     <div className="space-y-2">
                       {monthlyCashflowData.map((item) => (
-                        <div key={item.month} className="grid grid-cols-[36px_1fr] items-center gap-2">
+                        <div
+                          key={item.month}
+                          className="grid grid-cols-[36px_1fr] items-center gap-2"
+                        >
                           <span className="text-[11px] text-[#64748B]">
                             {chartMonthLabel(item.month)}
                           </span>
@@ -2390,18 +2499,25 @@ function App() {
                     <div className="flex items-center gap-4">
                       <div
                         className="relative size-20 rounded-full"
-                        style={{ background: `conic-gradient(${donutGradient})` }}
+                        style={{
+                          background: `conic-gradient(${donutGradient})`,
+                        }}
                       >
                         <div className="absolute inset-3 rounded-full bg-card" />
                       </div>
                       <div className="space-y-2">
                         {claimStatusData.map((item) => (
-                          <div key={item.label} className="flex items-center gap-2 text-xs text-[#64748B]">
+                          <div
+                            key={item.label}
+                            className="flex items-center gap-2 text-xs text-[#64748B]"
+                          >
                             <span
                               className="size-2.5 rounded-full"
                               style={{ backgroundColor: item.color }}
                             />
-                            <span className="text-foreground">{item.value}</span>
+                            <span className="text-foreground">
+                              {item.value}
+                            </span>
                             <span>{item.label}</span>
                           </div>
                         ))}
@@ -2414,7 +2530,7 @@ function App() {
 
             {activeTab === "kuries" && kuriView === "list" && (
               <>
-                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                       Kuries
@@ -2430,12 +2546,7 @@ function App() {
 
                   <div className="flex flex-wrap gap-2">
                     {(
-                      [
-                        "All",
-                        "Claimed",
-                        "Unclaimed",
-                        "Active",
-                      ] as KuriFilter[]
+                      ["All", "Claimed", "Unclaimed", "Active"] as KuriFilter[]
                     ).map((filter) => (
                       <button
                         key={filter}
@@ -2576,7 +2687,7 @@ function App() {
               kuriView === "detail" &&
               selectedKuri && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                     <div className="mb-4 flex items-center justify-between">
                       <button
                         type="button"
@@ -2869,7 +2980,7 @@ function App() {
                             setShowMarkPaymentDrawer(true);
                           }}
                         >
-                          Mark a Payment
+                          Record a Payment
                         </Button>
                         <Button
                           type="button"
@@ -2883,15 +2994,13 @@ function App() {
                             setShowMarkClaimDrawer(true);
                           }}
                         >
-                          Mark a Claim
+                          Record a Claim
                         </Button>
                       </div>
                     </div>
                   )}
 
-                  {!activeRound && (
-                    <EmptyState message="No active rounds." />
-                  )}
+                  {!activeRound && <EmptyState message="No active rounds." />}
 
                   <Button
                     type="button"
@@ -2965,12 +3074,17 @@ function App() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete this round?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will remove the round details. This action cannot be undone.
+                          This will remove the round details. This action cannot
+                          be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>
-                          <Button type="button" variant="outline" className="h-10 flex-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-10 flex-1"
+                          >
                             Cancel
                           </Button>
                         </AlertDialogCancel>
@@ -2994,7 +3108,7 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -3110,11 +3224,48 @@ function App() {
                                 ? "View Attachment"
                                 : "No Attachment"}
                             </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-10 w-full rounded-md text-sm text-destructive"
+                              onClick={() => requestDeletePayment(payment.id)}
+                            >
+                              Delete Payment
+                            </Button>
                           </div>
                         </article>
                       );
                     })}
                   </div>
+                  <AlertDialog
+                    open={showDeletePaymentDialog}
+                    onOpenChange={setShowDeletePaymentDialog}
+                  >
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>
+                          <Button type="button" variant="outline" className="h-10 flex-1">
+                            Cancel
+                          </Button>
+                        </AlertDialogCancel>
+                        <AlertDialogAction>
+                          <Button
+                            type="button"
+                            className="h-10 flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={deletePayment}
+                          >
+                            Delete
+                          </Button>
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </>
               )}
 
@@ -3123,7 +3274,7 @@ function App() {
               selectedKuri &&
               historyRound && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -3241,7 +3392,7 @@ function App() {
               kuriView === "completed-rounds" &&
               selectedKuri && (
                 <>
-                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                  <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                     <button
                       type="button"
                       className="mb-4 grid size-10 place-items-center rounded-full border border-border bg-background"
@@ -3255,7 +3406,6 @@ function App() {
                     <h2 className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                       Completed Rounds
                     </h2>
-                    
                   </div>
 
                   <div className="mt-[7rem] space-y-5">
@@ -3417,7 +3567,7 @@ function App() {
 
             {activeTab === "account" && (
               <div className="space-y-4">
-                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[500px] bg-background px-6 pt-2 pb-3">
+                <div className="fixed top-0 right-0 left-0 z-30 mx-auto w-full max-w-[800px] bg-background px-6 pt-2 pb-3">
                   {accountView !== "menu" && (
                     <button
                       type="button"
@@ -3444,10 +3594,16 @@ function App() {
                             ? "About App"
                             : "Account"}
                     </h2>
-                    {accountView === "menu" && <span className="size-10" aria-hidden />}
+                    {accountView === "menu" && (
+                      <span className="size-10" aria-hidden />
+                    )}
                   </div>
                 </div>
-                <div className={cn(accountView === "menu" ? "mt-20" : "mt-[6.5rem]")} />
+                <div
+                  className={cn(
+                    accountView === "menu" ? "mt-20" : "mt-[6.5rem]",
+                  )}
+                />
                 {accountView === "menu" && (
                   <>
                     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -3524,7 +3680,10 @@ function App() {
                               "Kuri User"}
                           </p>
                         ) : (
-                          <form className="mt-2 space-y-2" onSubmit={handleChangeName}>
+                          <form
+                            className="mt-2 space-y-2"
+                            onSubmit={handleChangeName}
+                          >
                             {changeNameError && (
                               <p className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                                 {changeNameError}
@@ -3538,7 +3697,9 @@ function App() {
                             <input
                               type="text"
                               value={newDisplayName}
-                              onChange={(e) => setNewDisplayName(e.target.value)}
+                              onChange={(e) =>
+                                setNewDisplayName(e.target.value)
+                              }
                               className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
                               placeholder="Enter your full name"
                             />
@@ -3697,8 +3858,8 @@ function App() {
                       records for payments, claims, progress, and history.
                     </p>
                     <p className="text-sm leading-6 text-muted-foreground">
-                      This app is only for tracking and transparency. It does not
-                      collect, hold, or transfer money.
+                      This app is only for tracking and transparency. It does
+                      not collect, hold, or transfer money.
                     </p>
                     <div className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                       Version: 1.0.0
@@ -3710,7 +3871,7 @@ function App() {
           </div>
 
           {showBottomMenu && (
-            <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[500px] px-5 py-5">
+            <div className="fixed right-0 bottom-0 left-0 z-30 mx-auto w-full max-w-[800px] px-5 py-5">
               <nav className="relative rounded-full border border-border bg-card p-1.5">
                 <div
                   className="absolute top-1.5 left-1.5 h-[calc(100%-0.75rem)] w-[calc((100%-0.75rem)/3)] rounded-full bg-primary/10 transition-transform duration-300 ease-out"
@@ -3749,25 +3910,31 @@ function App() {
             </div>
           )}
 
-          <Drawer
+          <Sheet
             open={showAddKuri}
             onOpenChange={(open) => {
               setShowAddKuri(open);
               if (!open) resetKuriForm();
             }}
           >
-            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
-              <DrawerHeader className="text-left">
-                <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+            <SheetContent
+              side={sheetSide}
+              className="flex flex-col overflow-hidden border-border bg-card"
+            >
+              <SheetHeader className="text-left">
+                <SheetTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   {isEditingKuri ? "Edit Kuri" : "Add Kuri"}
-                </DrawerTitle>
-                <DrawerDescription className="text-sm text-muted-foreground">
+                </SheetTitle>
+                <SheetDescription className="text-sm text-muted-foreground">
                   {isEditingKuri
                     ? "Update Kuri details"
                     : "Create a new Kuri to track"}
-                </DrawerDescription>
-              </DrawerHeader>
-              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitKuri}>
+                </SheetDescription>
+              </SheetHeader>
+              <form
+                className="flex min-h-0 flex-1 flex-col"
+                onSubmit={submitKuri}
+              >
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {kuriDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
@@ -3802,49 +3969,48 @@ function App() {
                     />
                   </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
-                  <Button
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-10">
+                  <SheetClose
                     type="button"
-                    variant="outline"
-                    className="h-10 flex-1"
-                    onClick={() => {
-                      setShowAddKuri(false);
-                      resetKuriForm();
-                    }}
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted"
+                    onClick={resetKuriForm}
                   >
                     Cancel
-                  </Button>
+                  </SheetClose>
                   <Button type="submit" className="h-10 flex-1">
                     {isEditingKuri ? "Save Changes" : "Submit"}
                   </Button>
                 </div>
               </form>
-            </DrawerContent>
-          </Drawer>
+            </SheetContent>
+          </Sheet>
 
-          <Drawer
+          <Sheet
             open={showNewRoundDrawer}
             onOpenChange={(open) => {
               setShowNewRoundDrawer(open);
               if (!open) resetRoundForm();
             }}
           >
-            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
-              <DrawerHeader className="text-left">
-                <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+            <SheetContent
+              side={sheetSide}
+              className="flex flex-col overflow-hidden border-border bg-card"
+            >
+              <SheetHeader className="text-left">
+                <SheetTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
                   {isEditingRound ? "Edit Round" : "New Round"}
-                </DrawerTitle>
-                <DrawerDescription className="text-sm text-muted-foreground">
+                </SheetTitle>
+                <SheetDescription className="text-sm text-muted-foreground">
                   {isEditingRound
                     ? "Update details for this round"
                     : "Add round details for this kuri"}
-                </DrawerDescription>
-              </DrawerHeader>
+                </SheetDescription>
+              </SheetHeader>
               <form
                 className="flex min-h-0 flex-1 flex-col"
                 onSubmit={submitRound}
               >
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {roundDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {roundDbError}
@@ -3928,129 +4094,127 @@ function App() {
                     />
                   </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
-                  <Button
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-10">
+                  <SheetClose
                     type="button"
-                    variant="outline"
-                    className="h-10 flex-1"
-                    onClick={() => {
-                      setShowNewRoundDrawer(false);
-                      resetRoundForm();
-                    }}
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted"
+                    onClick={resetRoundForm}
                   >
                     Cancel
-                  </Button>
+                  </SheetClose>
                   <Button type="submit" className="h-10 flex-1">
                     {isEditingRound ? "Save Changes" : "Submit"}
                   </Button>
                 </div>
               </form>
-            </DrawerContent>
-          </Drawer>
+            </SheetContent>
+          </Sheet>
 
-          <Drawer
+          <Sheet
             open={showMarkPaymentDrawer}
             onOpenChange={(open) => {
               setShowMarkPaymentDrawer(open);
               if (!open) resetPaymentForm();
             }}
           >
-            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
-              <DrawerHeader className="text-left">
-                <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                  {editingPayment ? "Edit Payment" : "Mark a Payment"}
-                </DrawerTitle>
-                <DrawerDescription className="text-sm text-muted-foreground">
+            <SheetContent
+              side={sheetSide}
+              className="flex flex-col overflow-hidden border-border bg-card"
+            >
+              <SheetHeader className="text-left">
+                <SheetTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                  {editingPayment ? "Edit Payment" : "Record a Payment"}
+                </SheetTitle>
+                <SheetDescription className="text-sm text-muted-foreground">
                   {editingPayment
                     ? "Update payment details for this installment"
                     : "Record payment for this round"}
-                </DrawerDescription>
-              </DrawerHeader>
-              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitPayment}>
+                </SheetDescription>
+              </SheetHeader>
+              <form
+                className="flex min-h-0 flex-1 flex-col"
+                onSubmit={submitPayment}
+              >
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {paymentDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {paymentDbError}
                     </div>
                   )}
-                <label className="block text-sm font-medium text-foreground">
-                  Installment
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${String(paymentFormInstallment).padStart(2, "0")} / ${paymentFormRound?.duration ?? 0}`}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Amount Paid
-                  <input
-                    type="text"
-                    readOnly
-                    value={
-                      paymentFormRound
-                        ? formatMoney(
-                            paymentFormRound.currency,
-                            paymentFormAmount,
-                          )
-                        : ""
-                    }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Paid On
-                  <input
-                    type="date"
-                    value={paidOnDate}
-                    onChange={(e) => setPaidOnDate(e.target.value)}
-                    className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Reference (Optional)
-                  <input
-                    type="text"
-                    value={paymentRef}
-                    onChange={(e) => setPaymentRef(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="UPI / bank / cash ref"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Attachment (Optional)
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) =>
-                      setPaymentAttachment(e.target.files?.[0] ?? null)
-                    }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10 file:mr-3 file:h-7 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-0 file:text-xs file:leading-7 file:font-medium file:text-primary-foreground"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Notes (Optional)
-                  <input
-                    type="text"
-                    value={paymentNote}
-                    onChange={(e) => setPaymentNote(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Additional notes"
-                  />
-                </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Installment
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${String(paymentFormInstallment).padStart(2, "0")} / ${paymentFormRound?.duration ?? 0}`}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Amount Paid
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        paymentFormRound
+                          ? formatMoney(
+                              paymentFormRound.currency,
+                              paymentFormAmount,
+                            )
+                          : ""
+                      }
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Paid On
+                    <input
+                      type="date"
+                      value={paidOnDate}
+                      onChange={(e) => setPaidOnDate(e.target.value)}
+                      className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Reference (Optional)
+                    <input
+                      type="text"
+                      value={paymentRef}
+                      onChange={(e) => setPaymentRef(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="UPI / bank / cash ref"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Attachment (Optional)
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) =>
+                        setPaymentAttachment(e.target.files?.[0] ?? null)
+                      }
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10 file:mr-3 file:h-7 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-0 file:text-xs file:leading-7 file:font-medium file:text-primary-foreground"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Notes (Optional)
+                    <input
+                      type="text"
+                      value={paymentNote}
+                      onChange={(e) => setPaymentNote(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Additional notes"
+                    />
+                  </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
-                  <Button
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-10">
+                  <SheetClose
                     type="button"
-                    variant="outline"
-                    className="h-10 flex-1"
-                    onClick={() => {
-                      setShowMarkPaymentDrawer(false);
-                      resetPaymentForm();
-                    }}
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted"
+                    onClick={resetPaymentForm}
                   >
                     Cancel
-                  </Button>
+                  </SheetClose>
                   <Button
                     type="submit"
                     className="h-10 flex-1"
@@ -4064,112 +4228,114 @@ function App() {
                   </Button>
                 </div>
               </form>
-            </DrawerContent>
-          </Drawer>
+            </SheetContent>
+          </Sheet>
 
-          <Drawer
+          <Sheet
             open={showMarkClaimDrawer}
             onOpenChange={(open) => {
               setShowMarkClaimDrawer(open);
               if (!open) resetClaimForm();
             }}
           >
-            <DrawerContent className="flex h-[92svh] max-h-[92svh] flex-col overflow-hidden border-border bg-card">
-              <DrawerHeader className="text-left">
-                <DrawerTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
-                  {editingClaim ? "Edit Claim" : "Mark a Claim"}
-                </DrawerTitle>
-                <DrawerDescription className="text-sm text-muted-foreground">
+            <SheetContent
+              side={sheetSide}
+              className="flex flex-col overflow-hidden border-border bg-card"
+            >
+              <SheetHeader className="text-left">
+                <SheetTitle className="text-2xl leading-8 font-semibold tracking-[-0.6px] text-foreground">
+                  {editingClaim ? "Edit Claim" : "Record a Claim"}
+                </SheetTitle>
+                <SheetDescription className="text-sm text-muted-foreground">
                   {editingClaim
                     ? "Update claim details for this installment"
                     : "Record claim received for this round"}
-                </DrawerDescription>
-              </DrawerHeader>
-              <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitClaim}>
+                </SheetDescription>
+              </SheetHeader>
+              <form
+                className="flex min-h-0 flex-1 flex-col"
+                onSubmit={submitClaim}
+              >
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
                   {claimDbError && (
                     <div className="rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
                       {claimDbError}
                     </div>
                   )}
-                <label className="block text-sm font-medium text-foreground">
-                  Amount
-                  <input
-                    type="text"
-                    readOnly
-                    value={
-                      claimFormRound
-                        ? formatMoney(
-                            claimFormRound.currency,
-                            claimFormAmount,
-                          )
-                        : ""
-                    }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Claim Sequence
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${String(claimFormSequence).padStart(2, "0")} / ${claimFormRound?.numberOfClaims ?? 0}`}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Claim Date
-                  <input
-                    type="date"
-                    value={claimDate}
-                    onChange={(e) => setClaimDate(e.target.value)}
-                    className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Reference (Optional)
-                  <input
-                    type="text"
-                    value={claimReference}
-                    onChange={(e) => setClaimReference(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Transaction reference"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Attachment (Optional)
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) =>
-                      setClaimAttachment(e.target.files?.[0] ?? null)
-                    }
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10 file:mr-3 file:h-7 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-0 file:text-xs file:leading-7 file:font-medium file:text-primary-foreground"
-                  />
-                </label>
-                <label className="block text-sm font-medium text-foreground">
-                  Note (Optional)
-                  <input
-                    type="text"
-                    value={claimNote}
-                    onChange={(e) => setClaimNote(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                    placeholder="Additional notes"
-                  />
-                </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Amount
+                    <input
+                      type="text"
+                      readOnly
+                      value={
+                        claimFormRound
+                          ? formatMoney(
+                              claimFormRound.currency,
+                              claimFormAmount,
+                            )
+                          : ""
+                      }
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Claim Sequence
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${String(claimFormSequence).padStart(2, "0")} / ${claimFormRound?.numberOfClaims ?? 0}`}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Claim Date
+                    <input
+                      type="date"
+                      value={claimDate}
+                      onChange={(e) => setClaimDate(e.target.value)}
+                      className="mt-2 block h-10 w-full min-w-0 max-w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Reference (Optional)
+                    <input
+                      type="text"
+                      value={claimReference}
+                      onChange={(e) => setClaimReference(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Transaction reference"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Attachment (Optional)
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) =>
+                        setClaimAttachment(e.target.files?.[0] ?? null)
+                      }
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 py-0 text-sm leading-10 file:mr-3 file:h-7 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-0 file:text-xs file:leading-7 file:font-medium file:text-primary-foreground"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-foreground">
+                    Note (Optional)
+                    <input
+                      type="text"
+                      value={claimNote}
+                      onChange={(e) => setClaimNote(e.target.value)}
+                      className="mt-2 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                      placeholder="Additional notes"
+                    />
+                  </label>
                 </div>
-                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(3rem+env(safe-area-inset-bottom))]">
-                  <Button
+                <div className="sticky bottom-0 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-10">
+                  <SheetClose
                     type="button"
-                    variant="outline"
-                    className="h-10 flex-1"
-                    onClick={() => {
-                      setShowMarkClaimDrawer(false);
-                      resetClaimForm();
-                    }}
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-border bg-background text-sm font-medium hover:bg-muted"
+                    onClick={resetClaimForm}
                   >
                     Cancel
-                  </Button>
+                  </SheetClose>
                   <Button
                     type="submit"
                     className="h-10 flex-1"
@@ -4183,8 +4349,8 @@ function App() {
                   </Button>
                 </div>
               </form>
-            </DrawerContent>
-          </Drawer>
+            </SheetContent>
+          </Sheet>
         </section>
       )}
     </main>
